@@ -33,7 +33,7 @@ that file (not the firmware) once step 1 confirms the real chart, and set
 ## Firmware (Arduino Mega 2560)
 
 Flash [`AGAP_HelperButton.ino`](AGAP_HelperButton.ino). It compiles clean
-against `arduino:avr:mega` (9.8 KB flash, 754 B RAM — verified in this repo).
+against `arduino:avr:mega` (~10 KB flash, ~760 B RAM — verified in this repo).
 
 - 10 driver channels (kick-and-hold PWM via Timer2, same scheme as the
   earlier sketch) press the helper's buttons.
@@ -48,6 +48,28 @@ against `arduino:avr:mega` (9.8 KB flash, 754 B RAM — verified in this repo).
 See the in-sketch `HELP` command, or the header comment, for the full
 command list: `PRESS`, `RELEASE`, `CHORD`, `STRUM`, `SEQUENCE`, `CALIB`,
 `TEMPO`, `KICK`, `HOLD`, `STATUS`, `STOP`, `LABELS`.
+
+### Tested logic (`agap_logic.h`)
+
+The channel state machine (off → pending → kick → hold, with mask
+computation and the auto-release timeout) and the strum sequencer live in
+[`agap_logic.h`](agap_logic.h) — plain C++, no Arduino/AVR dependency.
+`AGAP_HelperButton.ino` includes it directly (`agap::ChannelDriver`,
+`agap::Strummer`, `agap::findLabel`), so the firmware runs the exact code
+the tests check, not a parallel copy.
+
+```bash
+cd tests
+./run_tests.sh        # or: g++ -std=c++14 -I.. test_agap_logic.cpp -o t && ./t
+```
+
+74 checks: label lookup, every channel-state transition (including the
+PORTA/PORTC register-boundary split at channel 8, the kick→hold duty
+switch, and the timeout/refresh timing), and strum ordering in both
+directions. Runs on any machine with g++ — no board, no Arduino IDE.
+Change the state machine in `agap_logic.h` and its tests together; keep
+the `.ino` itself limited to wiring that logic to real pins, `millis()`,
+`Serial` and the Timer2 ISR.
 
 **Wiring safety, restated from `README_AGAP.md` section 7:** never wire a
 solenoid coil directly to a Mega pin. Each channel needs its own

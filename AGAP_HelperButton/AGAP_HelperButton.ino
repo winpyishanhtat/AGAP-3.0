@@ -50,12 +50,23 @@
 
   Serial: USB 115200. One port only for now; the Python sequencer
   (../tools/agap_control.py) talks to this port.
+
+  The channel state machine, mask computation and strum sequencing below
+  are implemented in agap_logic.h, which has no Arduino/AVR dependency and
+  is covered by tests/test_agap_logic.cpp (run with tests/run_tests.sh on
+  any machine with g++ - no board needed). This file wires that tested
+  logic to real hardware (Serial, millis(), the Timer2 ISR, Servo) and
+  should stay thin - if you're changing *what* the state machine does
+  rather than *how it reaches real pins*, change agap_logic.h and update
+  its tests, not here.
 */
 
 #include <Servo.h>
 #include <util/atomic.h>
 #include <string.h>
 #include <stdlib.h>
+
+#include "agap_logic.h"
 
 // ============================ Button channels ============================
 const uint8_t NUM_BUTTONS = 10;
@@ -82,38 +93,22 @@ uint8_t pickB[6] = {110, 110, 110, 110, 110, 110};
 enum { BTN_STRUM, BTN_NEXT, BTN_PREV, BTN_STOP, NUM_CTRL_BTN };
 const uint8_t CTRL_BTN_PIN[NUM_CTRL_BTN] = {A0, A1, A2, A3};
 
-// Forward declarations - the Arduino builder inserts collected function
-// prototypes before the first function below, earlier than where later
-// types are defined. See ../AGAP_Mega/AGAP_Mega.ino for the full story.
-enum ChanState : uint8_t;
-
 // ========================= Driver (kick-and-hold PWM) =========================
 // Same approach as the earlier sketch: a full-power "kick" seats the button,
 // then a PWM "hold" (holdDuty/256) keeps it down without overheating the coil.
-// 10 channels fit on PORTA (0-7) + PORTC bits 0-1.
+// 10 channels fit on PORTA (0-7) + PORTC bits 0-1. The state machine and
+// mask math live in agap_logic.h (ChannelDriver) - this is just the ISR and
+// the glue that pushes its computed masks into the volatiles the ISR reads.
 volatile uint8_t onA, onC, kickA, kickC;
 
 ISR(TIMER2_OVF_vect)   { PORTA = onA;   PORTC = onC;   }
 ISR(TIMER2_COMPA_vect) { PORTA = kickA; PORTC = kickC; }
 
-enum ChanState : uint8_t { CH_OFF, CH_PENDING, CH_KICK, CH_HOLD };
-ChanState chanState[NUM_BUTTONS];
-uint32_t  chanTime[NUM_BUTTONS];     // PENDING: start time; KICK/HOLD: time of kick
-uint32_t  chanRefresh[NUM_BUTTONS];  // last time a command touched this channel
-bool      masksDirty = false;
+agap::ChannelDriver<NUM_BUTTONS> channels(kickMs, CMD_TIMEOUT_MS);
 
-static inline void setBit(uint8_t i, uint8_t& a, uint8_t& c) {
-  if (i < 8) a |= _BV(i); else c |= _BV(i - 8);
-}
-
-void rebuildMasks() {
-  uint8_t a = 0, c = 0, ka = 0, kc = 0;
-  for (uint8_t i = 0; i < NUM_BUTTONS; i++) {
-    if (chanState[i] == CH_KICK) { setBit(i, a, c); setBit(i, ka, kc); }
-    else if (chanState[i] == CH_HOLD) setBit(i, a, c);
-  }
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { onA = a; onC = c; kickA = ka; kickC = kc; }
-  masksDirty = false;
+void pushMasks() {
+  agap::Masks m = channels.computeMasks();
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { onA = m.a; onC = m.c; kickA = m.ka; kickC = m.kc; }
 }
 
 void driverBegin() {
@@ -126,62 +121,24 @@ void driverBegin() {
 }
 
 int8_t findButton(const char* label) {
-  for (uint8_t i = 0; i < NUM_BUTTONS; i++) if (strcasecmp(BUTTON_LABEL[i], label) == 0) return i;
-  return -1;
-}
-
-void pressButton(uint8_t i, uint32_t startAt) {
-  uint32_t now = millis();
-  if (chanState[i] == CH_OFF) { chanState[i] = CH_PENDING; chanTime[i] = startAt; }
-  chanRefresh[i] = now;  // (re)starts the auto-release timeout
-}
-
-void releaseButton(uint8_t i) {
-  if (chanState[i] != CH_OFF) { chanState[i] = CH_OFF; masksDirty = true; }
+  return agap::findLabel(BUTTON_LABEL, NUM_BUTTONS, label);
 }
 
 void releaseAll() {
-  for (uint8_t i = 0; i < NUM_BUTTONS; i++) releaseButton(i);
-  rebuildMasks();
+  channels.releaseAll();
+  pushMasks();
 }
 
 void updateChannels(uint32_t now) {
-  for (uint8_t i = 0; i < NUM_BUTTONS; i++) {
-    switch (chanState[i]) {
-      case CH_PENDING:
-        if ((int32_t)(now - chanTime[i]) >= 0) { chanState[i] = CH_KICK; chanTime[i] = now; masksDirty = true; }
-        break;
-      case CH_KICK:
-        if (now - chanTime[i] >= kickMs) { chanState[i] = CH_HOLD; masksDirty = true; }
-        break;
-      case CH_HOLD:
-        if (now - chanRefresh[i] >= CMD_TIMEOUT_MS) { chanState[i] = CH_OFF; masksDirty = true; }  // safety timeout
-        break;
-      default: break;
-    }
-  }
-  if (masksDirty) rebuildMasks();
+  if (channels.update(now)) pushMasks();
 }
 
 // One button, pressed now, with the stagger pattern used for a full chord.
 uint16_t pressOne(uint8_t i) {
-  pressButton(i, millis());
-  rebuildMasks();
+  uint32_t now = millis();
+  channels.press(i, now, now);
+  pushMasks();
   return kickMs + SETTLE_MS;
-}
-
-// Press every button in a chord (usually one, but a shape could need more
-// than one button - TBD once the real chart is confirmed, step 1).
-uint16_t pressChord(const uint8_t* idx, uint8_t n) {
-  uint32_t t = millis();
-  for (uint8_t k = 0; k < n; k++) pressButton(idx[k], t + STAGGER_MS * k);
-  for (uint8_t i = 0; i < NUM_BUTTONS; i++) {
-    bool want = false;
-    for (uint8_t k = 0; k < n; k++) if (idx[k] == i) want = true;
-    if (!want) releaseButton(i);
-  }
-  rebuildMasks();
-  return n ? STAGGER_MS * (n - 1) + kickMs + SETTLE_MS : 0;
 }
 
 // =============================== Strummer ===============================
@@ -195,22 +152,15 @@ void pluck(uint8_t s) {
   picks[s].write(pickAtB[s] ? pickB[s] : pickA[s]);
 }
 
-struct { bool down; uint8_t idx; uint8_t gap; uint32_t nextAt; bool active; } strum;
+agap::Strummer strum;
 
 void startStrum(bool down, uint32_t startAt, uint8_t gap = STRUM_GAP_MS) {
-  strum.down = down; strum.idx = 0; strum.gap = gap; strum.nextAt = startAt; strum.active = true;
+  strum.start(down, startAt, gap);
 }
 
 void updateStrum(uint32_t now) {
-  if (!strum.active || (int32_t)(now - strum.nextAt) < 0) return;
-  if (strum.idx < 6) {
-    uint8_t s = strum.down ? strum.idx : 5 - strum.idx;
-    pluck(s);
-    strum.idx++;
-    strum.nextAt = now + strum.gap;
-  } else {
-    strum.active = false;
-  }
+  int8_t s = strum.update(now);
+  if (s >= 0) pluck((uint8_t)s);
 }
 
 // ================================ State ================================
@@ -225,7 +175,7 @@ void playButton(int8_t i, bool down) {
 }
 
 void stopAll() {
-  strum.active = false;
+  strum.stop();
   releaseAll();
   curButton = -1;
 }
@@ -288,7 +238,7 @@ void handleSequence(char* rest, Stream& out) {
     out.print(F("STEP ")); out.println(BUTTON_LABEL[i]);
     playButton(i, strumDown); strumDown = !strumDown;
     uint32_t stepStart = millis();
-    while (strum.active || millis() - stepStart < beat) {
+    while (strum.active() || millis() - stepStart < beat) {
       updateStrum(millis()); updateChannels(millis());
       if (checkAbort()) { stopAll(); out.println(F("ABORTED (STOP)")); return; }
     }
@@ -316,8 +266,8 @@ void handleCommand(char* line, Stream& out) {
     if (label && eq(label, "ALL")) { releaseAll(); out.println(F("RELEASED ALL")); return; }
     int8_t i = label ? findButton(label) : -1;
     if (i < 0) { out.println(F("ERR unknown label, see LABELS")); return; }
-    releaseButton(i);
-    rebuildMasks();
+    channels.release(i);
+    pushMasks();
     out.print(F("RELEASED ")); out.println(BUTTON_LABEL[i]);
   } else if (eq(cmd, "CHORD")) {
     char* label = strtok(NULL, " \t");
@@ -350,8 +300,8 @@ void handleCommand(char* line, Stream& out) {
         updateChannels(millis());
         if (checkAbort()) { releaseAll(); out.println(F("ABORTED (STOP)")); return; }
       }
-      releaseButton(i);
-      rebuildMasks();
+      channels.release(i);
+      pushMasks();
       out.print(F("  rep ")); out.print(r + 1); out.println(F(" done"));
       uint32_t t1 = millis();
       while (millis() - t1 < gapMs) {
