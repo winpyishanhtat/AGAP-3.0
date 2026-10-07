@@ -1,9 +1,10 @@
 # AGAP — Arduino Guitar Auto Player (Arduino Mega 2560)
 
-A robot that plays a real guitar. This repo has two architectures:
+A robot that plays a real guitar. This repo has two hardware architectures plus a standalone software piece:
 
 - **[`AGAP_HelperButton/`](AGAP_HelperButton/) — current direction.** A purchased mechanical chord helper frets the strings; 10 solenoids press the helper's own buttons, 6 servos (reused) strum. Driven by Arduino firmware plus a Python sequencing layer ([`tools/agap_control.py`](tools/agap_control.py)). See [`README_AGAP.md`](README_AGAP.md) for the full design status, physical constraints and next steps — the firmware/software side of that document's steps 5–7 is implemented here; steps 1–4 (measuring the real helper, the solenoid, and 3D-printing a fit test) are physical work that still needs doing on the bench.
 - **[`AGAP_Mega/`](AGAP_Mega/) — earlier direction, kept for reference.** 18 solenoids press the strings directly on frets 1–3, with an on-board AI search that swaps barre chords for open-chord voicings. Superseded by the helper-button approach above, but the chord-solving idea and strummer code are reused there.
+- **[`ChordAI/`](ChordAI/) — the "AI search engine software", standalone.** A plain-Python port of the barre-to-open chord search, with no robot/hardware needed at all — the original spec's requirement that the chord simplifier work on its own as a practice tool. Also does the reverse: name the chord from a fretted shape, then simplify it. 21 passing tests.
 
 Both sketches compile clean against `arduino:avr:mega` (verified with `arduino-cli` in this repo).
 
@@ -15,7 +16,7 @@ Both sketches compile clean against `arduino:avr:mega` (verified with `arduino-c
 | 6 servos for plucking/strumming | ✗ not enough pins left | ✓ | D2–D7, `Servo` lib (Timer5) |
 | Kick-and-hold PWM on all 18 coils | ✗ 6 PWM pins | ✓ | Timer2 ISR: 100 % kick, then ~30 % hold, at 7.8 kHz |
 | AI constraint search + cost function (barre → open) | ⚠ only 2 KB RAM | ✓ | Branch-and-bound DFS, finishes in a few ms |
-| Search engine usable without the robot | — | ✓ | `SHOW <chord>` prints the voicing without moving anything |
+| Search engine usable without the robot | — | ✓ | `SHOW <chord>` on the board, or [`ChordAI/chord_ai.py`](ChordAI/chord_ai.py) on any PC with just Python |
 | Assistive mode (button / screen) | ⚠ | ✓ | A0–A4 buttons, Nextion on Serial2, phone over HC-05 on Serial1 |
 | Teaching mode (slow, repeated finger placement) | ⚠ | ✓ | Places one finger per beat, plays an arpeggio, then strums 4 times |
 | Real guitar sound, no guitar modification | ✓ | ✓ | Mechanical (cradle), so the board choice doesn't matter |
