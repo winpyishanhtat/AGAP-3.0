@@ -1,0 +1,15 @@
+{
+  "_comment": "Maps the chord-helper's physical button labels to chord names and to the firmware's channel index. EVERYTHING here is a guess pending README_AGAP.md step 1 (measure/confirm the real chord chart and identify the 2 unlabeled positions). Edit this file, not the .ino, once the real layout is known - the firmware and tools/agap_control.py both read label strings, not hardcoded chord logic.",
+  "buttons": [
+    {"label": "EM", "chord": "Em", "confirmed": false},
+    {"label": "AM", "chord": "Am", "confirmed": false},
+    {"label": "D",  "chord": "D",  "confirmed": false},
+    {"label": "C",  "chord": "C",  "confirmed": false},
+    {"label": "F",  "chord": "F",  "confirmed": false},
+    {"label": "DM", "chord": "Dm", "confirmed": false},
+    {"label": "G",  "chord": "G",  "confirmed": false},
+    {"label": "BM", "chord": "Bm", "confirmed": false},
+    {"label": "X1", "chord": null, "confirmed": false, "note": "unlabeled feature in the helper photos - identify before use (README_AGAP.md section 2)"},
+    {"label": "X2", "chord": null, "confirmed": false, "note": "unlabeled feature in the helper photos - identify before use (README_AGAP.md section 2)"}
+  ]
+}

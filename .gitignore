@@ -2,3 +2,5 @@ build/
 *.hex
 *.elf
 .vscode/
+__pycache__/
+*.pyc

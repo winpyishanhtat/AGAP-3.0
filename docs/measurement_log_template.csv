@@ -1,0 +1,2 @@
+date,step,button_label,target_chord,guitar_setup_notes,actuator_model,coil_voltage_under_load_v,current_a,button_travel_mm,command_hold_ms,press_result,release_result,chord_quality_notes,temperature_notes,pass_fail
+,,,,,,,,,,,,,,

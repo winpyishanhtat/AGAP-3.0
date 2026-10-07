@@ -1,8 +1,11 @@
 # AGAP — Arduino Guitar Auto Player (Arduino Mega 2560)
 
-A robot that plays a real guitar: 18 solenoids press the strings on frets 1–3, and 6 servos pluck them. An on-board AI search swaps barre chords for open-chord voicings that stay within frets 0–3.
+A robot that plays a real guitar. This repo has two architectures:
 
-Sketch: [AGAP_Mega/AGAP_Mega.ino](AGAP_Mega/AGAP_Mega.ino)
+- **[`AGAP_HelperButton/`](AGAP_HelperButton/) — current direction.** A purchased mechanical chord helper frets the strings; 10 solenoids press the helper's own buttons, 6 servos (reused) strum. Driven by Arduino firmware plus a Python sequencing layer ([`tools/agap_control.py`](tools/agap_control.py)). See [`README_AGAP.md`](README_AGAP.md) for the full design status, physical constraints and next steps — the firmware/software side of that document's steps 5–7 is implemented here; steps 1–4 (measuring the real helper, the solenoid, and 3D-printing a fit test) are physical work that still needs doing on the bench.
+- **[`AGAP_Mega/`](AGAP_Mega/) — earlier direction, kept for reference.** 18 solenoids press the strings directly on frets 1–3, with an on-board AI search that swaps barre chords for open-chord voicings. Superseded by the helper-button approach above, but the chord-solving idea and strummer code are reused there.
+
+Both sketches compile clean against `arduino:avr:mega` (verified with `arduino-cli` in this repo).
 
 ## Can each feature run on an Arduino?
 
