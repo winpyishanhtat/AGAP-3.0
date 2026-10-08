@@ -1,8 +1,16 @@
 name: Deploy ChordAI web page
 
-# Manual trigger. One-time setup first: repo Settings -> Pages -> Source:
-# "GitHub Actions". Then run this workflow from the Actions tab.
+# Deploys on every push that changes the page, and can be run by hand.
+# configure-pages tries to switch Pages on by itself (enablement: true); if
+# that is refused, set repo Settings -> Pages -> Source: "GitHub Actions"
+# once and re-run.
 on:
+  push:
+    branches: [main]
+    paths:
+      - "ChordAI/web/index.html"
+      - "ChordAI/web/chord_ai.js"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -23,6 +31,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - name: Keep only the files the page needs
         run: |
           mkdir site
