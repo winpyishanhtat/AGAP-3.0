@@ -48,6 +48,17 @@ jobs:
           python dump_python_results.py > expected.json
           node parity_test.js expected.json
 
+  bridge-tests:
+    name: Remote bridge tests (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m unittest test_agap_bridge -v
+        working-directory: bridge
+
   firmware-compile:
     name: Compile sketches for Arduino Mega 2560
     runs-on: ubuntu-latest
