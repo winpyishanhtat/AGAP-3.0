@@ -17,8 +17,7 @@ edges are about one extrusion width (0.4 mm) further out.
 
 The part numbers are not unique: `08_Hole Slide 1` and `08_LH Base` both carry
 08, so the numbering can't be used to count missing parts. Some parts are
-still not supplied, since nothing here covers the helper mount or any
-solenoid mount.
+still not supplied, since nothing here covers the helper mount.
 
 ## What the files establish, and how the software lines up
 
@@ -29,24 +28,45 @@ solenoid mount.
 | The arm is called **adjustable** | The firmware only had compile-time `pickA`/`pickB` angles, so tuning meant re-flashing. Added runtime calibration: `PICK`, `PLUCK`, `PICKS` (below), with clamped angles |
 | Central deck: 12 slots of 6.7 x 3.7 mm (four groups of three), a 72.4 x 24.4 mm central cutout, 4 slots of 3.4 x 7.4 mm, and 8 round holes (4 x 4.8 mm, 4 x 3.7 mm) | Nothing in the software depends on these |
 
-### `LH.hvs` (updated design): what it shows
+### `LH.hvs` (updated design): the solenoid base
 
-`08_LH Base` is a block 65.8 x 39.6 x 12.6 mm that steps in to 53.6 mm wide
-after the first few layers. Measured features:
+`08_LH Base` holds the solenoids (stated by the project owner; the file itself
+does not say what "LH" means). It is a block 65.8 x 39.6 x 12.6 mm that steps
+in to 53.6 mm wide after the first few layers. Measured from the toolpaths:
 
-- **Two long parallel pockets**, each about 50 x 8.9 mm, centred 27.5 mm apart
-  (Y = 67.1 and 94.6), open through most of the height.
+- **Two parallel pockets**, each one single undivided cavity (no ribs or
+  cells), measured loop **50.4 x 8.9 mm**, centred 27.5 mm apart (Y = 67.1 and
+  94.6). A hole's real void is about one extrusion width (0.4 mm) smaller than
+  its centre line, so plan on about **50.0 x 8.5 mm**.
+- **Open-topped and about 11.1 mm deep**, on a floor about 1.5 mm thick.
 - **A small ramp-shaped cavity** between them, 12.4 mm long at the bottom
   narrowing to under 2 mm near the top.
 - **Three 3.4 mm holes** at the top (a size that suits M3 screws).
 
-What this does and does not change in the software: **nothing.** The file
-does not say what "LH" stands for ("left hand" would fit a fretting-side part,
-but that is a guess), what goes in the pockets, or how many solenoids or
-servos the updated design uses. So the firmware's 10 solenoid channels and 6
-servos stay as they were. One observation only: the base is 65.8 mm wide and
-the servo pod is 65.6 mm wide, which may mean they are meant to mate, but the
-files do not say so.
+What the geometry does and does not say:
+
+- It says how much room the solenoids have: two lanes, each at most about
+  8.5 mm across and 50 mm long. Any solenoid body wider than about 8 mm in
+  the across direction will not fit.
+- It does **not** say how many solenoids there are, how they are oriented,
+  which one drives which helper button, or how the plunger reaches the button.
+  Undivided pockets give no per-solenoid positions. So the firmware's
+  **10 channels are unchanged** and still come from `README_AGAP.md`. For
+  scale only: 10 solenoids is 5 per pocket, which needs each body to be
+  about 9 mm or less along the pocket. Measure yours.
+- Use [`tools/lh_fit.py`](../tools/lh_fit.py) with your measured solenoid
+  body to see how many fit and in which orientation:
+
+```bash
+python tools/lh_fit.py 7 9 10 --need 10     # body dimensions in mm
+```
+
+It assumes 0.3 mm clearance per side and 0.5 mm between bodies. Those are
+assumptions, not measurements, and it cannot know which side is the plunger
+axis.
+
+The base is 65.8 mm wide and the servo pod is 65.6 mm wide, which may mean
+they are meant to mate, but the files do not say so.
 
 ### New firmware commands (pick calibration)
 
@@ -68,10 +88,10 @@ a power cycle (the commands change RAM only).
 
 Do not assume any of these; each needs a look at the real parts:
 
-- **How many solenoids there are or where they go.** None of the four parts
-  is identifiable as a solenoid mount. The deck's 12 slots are not evidence
-  of 12 (or 10) channels. The firmware's 10 channels still come from
-  `README_AGAP.md`, not from these files.
+- **How many solenoids there are or where each one goes.** The LH base holds
+  them, but its pockets are undivided, so the file gives lanes, not positions.
+  The deck's 12 slots are not evidence of 12 (or 10) channels. The firmware's
+  10 channels still come from `README_AGAP.md`, not from these files.
 - **Which servo drives which string.** The bays are a 3 x 2 grid; the files
   don't say the order. Check it when wiring D2-D7 (low E first).
 - **The servo model.** A bay outline of about 17.6 x 40.6 mm is not a
@@ -81,10 +101,9 @@ Do not assume any of these; each needs a look at the real parts:
 - **What the "Hole Slide" and "hole clamp" parts are for.** The slide file
   contains two plates of about 70 x 70 mm, each with a slot of about
   20 x 10 mm; the file doesn't say what slides in them.
-- **The other parts**: the helper mount, any solenoid mount, and anything
-  else not supplied.
-- **What the updated design (`LH.hvs`) changes** compared with the first four
-  files, including whether the channel count changes.
+- **The other parts**: the helper mount, and anything else not supplied.
+- **What else the updated design changes** compared with the first four
+  files, for example whether the central deck is still used.
 
 ## Reproducing the measurements
 

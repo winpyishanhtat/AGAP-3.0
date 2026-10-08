@@ -141,7 +141,10 @@ all ten.
    button or send `STOP` — both work even mid-`CALIB`, immediately.
 5. Only once one channel behaves safely and predictably should you wire
    and power the remaining nine the same way.
-6. Mount the solenoid against the real chord-helper button and repeat the
+6. The solenoids sit in the two pockets of the printed LH base (`../docs/HARDWARE_SPECS.md`).
+   Measure your solenoid body and run `python tools/lh_fit.py <mm> <mm> <mm> --need 10`
+   to see whether, and how many, fit before you print or glue anything. Then mount
+   the solenoid against the real chord-helper button and repeat the
    `CALIB` test loaded. Record travel, force behaviour, and temperature in
    [`../docs/measurement_log_template.csv`](../docs/measurement_log_template.csv)
    — keep failed attempts in the log too, not just the good ones.

@@ -16,7 +16,7 @@ The robot does it like this:
 
 1. You pick a chord, with a panel button or from a phone or computer.
 2. A small computer board (an **Arduino Mega**) receives the choice.
-3. Small electromagnets (**solenoids**) push a button on a **chord helper**,
+3. Small electromagnets (**solenoids**), held in the printed **LH base**, push a button on a **chord helper**,
    a purchased device clamped to the guitar neck that presses the strings
    into a chord shape.
 4. Six small motors (**servos**) strum the strings, so the guitar makes a
@@ -91,7 +91,7 @@ the chord. B minor becomes `x 2 0 x 0 2`.
 |---|---|
 | `AGAP_HelperButton/` | Current firmware, wiring/user manual, 74 logic tests |
 | `AGAP_Mega/` | Earlier design: 18 solenoids pressing strings directly. Kept for reference |
-| `tools/` | PC control tool in C++ and Python, 49 logic tests for the C++ one |
+| `tools/` | PC control tool in C++ and Python, 49 logic tests for the C++ one; `hvs_inspect.py` measures printed parts; `lh_fit.py` checks solenoid fit in the LH base |
 | `bridge/` | Remote-control bridge and phone page, 28 tests |
 | `ChordAI/` | Chord simplifier (Python, plus the browser version in `web/`) |
 | `.github/workflows/` | CI that runs every test and compiles both sketches; Pages deploy |

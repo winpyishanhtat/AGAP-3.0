@@ -22,8 +22,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: G-code inspector tests
-        run: python -m unittest test_hvs_inspect -v
+      - name: G-code inspector and LH fit checker tests
+        run: python -m unittest test_hvs_inspect test_lh_fit -v
         working-directory: tools/tests
 
   launcher-tests:
