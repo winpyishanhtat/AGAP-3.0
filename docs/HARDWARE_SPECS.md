@@ -23,7 +23,7 @@ still not supplied, since nothing here covers the helper mount.
 
 | Finding | Software |
 |---|---|
-| **Servo pod has 6 servo bays**, in a 3 x 2 grid: columns 24.0 mm apart (X = 48.8, 72.8, 96.8), rows 47 mm apart (Y = 53.8, 100.8), each bay outline about 17.6 x 40.6 mm at the base | Matches the firmware's 6 servos (D2-D7). No change needed |
+| **Servo pod has 6 servo units**, in a 3 x 2 grid: columns 24.0 mm apart, rows 47 mm apart. Each unit is a solid 17.6 x 40.6 mm foot with two 3.7 mm screw holes (34 mm apart), topped by a pair of thin walls about 2.5 mm thick and 24.8 mm long, with a clear gap of about 13 mm between them, standing about 13 mm high. The gap is where a servo would sit | Matches the firmware's 6 servos (D2-D7). No change needed |
 | **6 pick arms** printed (about 7.6 x 34.6 mm each), plus 4 hole-clamp pieces | Matches 6 picks, one per string |
 | The arm is called **adjustable** | The firmware only had compile-time `pickA`/`pickB` angles, so tuning meant re-flashing. Added runtime calibration: `PICK`, `PLUCK`, `PICKS` (below), with clamped angles |
 | **Central deck**, exact outline in the supplied drawing (below): 114 x 112 mm plate, one 72 x 24 mm cutout, 12 slots of 6.3 x 3.3 mm, 4 slots of 3 x 7 mm, 8 round holes | Nothing in the software depends on these |
@@ -42,6 +42,15 @@ sizes, not toolpath measurements. In the file's own millimetre coordinates:
 - 4 round holes **dia 3.3** at (5, 40), (109, 40), (5, 72), (109, 72)
 
 What this drawing does not say is what any of those features are for.
+
+**One thing to check against the real parts.** The pod's 12 screw holes come in
+pairs 34 mm apart, and the deck's 12 slots also come in pairs 34 mm apart, so
+the pod looks designed to bolt onto this deck. But as drawn they do not line up
+in one placement: the pod's units are 24 mm apart across and 47 mm apart down,
+while the deck's slots are 20 mm apart across (and each slot gives only about
+3 mm of sideways play) and its two slot groups are 64 mm apart down. Either one
+of the two is still being revised (the deck is described as a draft), or the
+units are meant to be fitted one at a time. The files do not say which.
 
 **This also checks the G-code measuring method.** All 26 features measured from
 `center.hvs` match this drawing, centres to within 0.01 mm. Sizes differ by
@@ -117,8 +126,13 @@ Do not assume any of these; each needs a look at the real parts:
   10 channels still come from `README_AGAP.md`, not from these files.
 - **Which servo drives which string.** The bays are a 3 x 2 grid; the files
   don't say the order. Check it when wiring D2-D7 (low E first).
-- **The servo model.** A bay outline of about 17.6 x 40.6 mm is not a
-  servo name. Check your servo's body size against it before printing more.
+- **The servo model.** The gap between each pair of walls (about 13 mm wide,
+  24.8 mm long) is roughly what a small 9 g servo body needs (typically about
+  12 mm wide and 22-23 mm long; check yours), and a larger standard servo
+  would not fit. That is consistent with a small servo, not proof. Measure
+  your servo against the gap before printing more.
+  (An earlier version of this doc called the 17.6 x 40.6 mm shape a "bay".
+  That is the solid foot at the bottom, not the space the servo sits in.)
 - **The pick arm's real travel.** The G-code can't say how far the arm is
   meant to swing.
 - **What the "Hole Slide" and "hole clamp" parts are for.** The slide file
