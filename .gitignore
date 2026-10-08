@@ -6,3 +6,4 @@ __pycache__/
 *.pyc
 **/tests/*.exe
 **/tests/test_agap_logic
+tools/*.exe

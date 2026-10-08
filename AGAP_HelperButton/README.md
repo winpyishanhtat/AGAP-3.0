@@ -83,6 +83,30 @@ appropriately rated MOSFET or relay driver and flyback suppression. Size
 the 12 V supply from the real measured coil current (step 2) times the
 number of channels that can be active together.
 
+## PC-side control tool: C++ (`../tools/agap_control.cpp`) or Python
+
+The PC-side sequencer exists in two interchangeable versions with the same
+commands and the same serial protocol. **The C++ one needs no Python**
+(Windows only; builds with MinGW g++):
+
+```bash
+cd ../tools
+g++ -std=c++14 -O2 agap_control.cpp -o agap_control.exe
+agap_control ports
+agap_control --port COM5 calib EM --hold-ms 1000 --reps 5
+agap_control --port COM5 sequence C G Am F --bpm 50
+agap_control --port COM5 stop
+```
+
+Its parsing/resolution/command-building logic (`tools/agap_control_logic.h`)
+has 49 native unit tests: `tools/tests/run_tests.sh`. The COM-port I/O
+layer itself is not unit-tested and has not yet been exercised against a
+real board.
+
+Python can't run *on* the Mega (8 KB RAM, no Python port for AVR), which is
+why the firmware is C++; the Python/C++ tools both run on the PC and talk to
+the board over USB serial.
+
 ## Python sequencing layer (`../tools/agap_control.py`)
 
 This is the "Python chord selection / sequencing" box in
