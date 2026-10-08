@@ -38,6 +38,31 @@ inline int8_t findLabel(const char* const* labels, uint8_t n, const char* query)
   return -1;
 }
 
+// ===================== Pick (servo) calibration =====================
+// The printed pick arms are adjustable (04_adjustable_pick_arm), so each
+// string's two end-of-swing angles (A and B) must be tuned on the real
+// build. These helpers keep that tuning inside sane limits and give it the
+// string numbering people use (1 = high e ... 6 = low E).
+//
+// PICK_ANGLE_MIN/MAX are conservative placeholders to stop a typo driving a
+// servo into its end stop, NOT measured limits of the printed arm. Widen
+// them only after checking the real travel.
+constexpr uint8_t PICK_ANGLE_MIN = 10;
+constexpr uint8_t PICK_ANGLE_MAX = 170;
+
+inline uint8_t clampPickAngle(int angle) {
+  if (angle < PICK_ANGLE_MIN) return PICK_ANGLE_MIN;
+  if (angle > PICK_ANGLE_MAX) return PICK_ANGLE_MAX;
+  return (uint8_t)angle;
+}
+
+// String number as a player says it (1 = high e .. 6 = low E) -> servo index
+// (0 = low E .. 5 = high e, the order the strummer and servo pins use).
+// Returns -1 if out of range.
+inline int8_t stringToServoIndex(int stringNumber) {
+  return (stringNumber >= 1 && stringNumber <= 6) ? (int8_t)(6 - stringNumber) : (int8_t)-1;
+}
+
 // ===================== Kick-and-hold channel driver =====================
 // One instance of this replaces AGAP_HelperButton.ino's chanState[]/
 // chanTime[]/chanRefresh[] arrays plus rebuildMasks()/updateChannels()/

@@ -53,7 +53,9 @@ against `arduino:avr:mega` (~10 KB flash, ~760 B RAM — verified in this repo).
 
 See the in-sketch `HELP` command, or the header comment, for the full
 command list: `PRESS`, `RELEASE`, `CHORD`, `STRUM`, `SEQUENCE`, `CALIB`,
-`TEMPO`, `KICK`, `HOLD`, `STATUS`, `STOP`, `LABELS`.
+`TEMPO`, `KICK`, `HOLD`, `STATUS`, `STOP`, `LABELS`, plus pick-arm
+calibration `PICK`, `PLUCK`, `PICKS`. Printed-part measurements and what
+they do and don't establish: [`../docs/HARDWARE_SPECS.md`](../docs/HARDWARE_SPECS.md).
 
 ### Tested logic (`agap_logic.h`)
 

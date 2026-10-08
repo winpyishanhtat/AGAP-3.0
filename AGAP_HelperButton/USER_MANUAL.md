@@ -146,6 +146,25 @@ all ten.
    HOLD 60       set the hold-phase duty, 0-100 (percent)
    ```
 
+## Step 5b — Tune each pick arm (strummer)
+
+The printed pick arms are adjustable (`../docs/HARDWARE_SPECS.md`), so set
+each string's two end angles on the real build. String numbers are 1 = high
+e ... 6 = low E. Keep your hand clear of the arms while testing.
+
+```
+PICKS               show every pick's current A and B angle
+PLUCK 6             swing the low-E pick to its other side (repeat to swing back)
+PICK 6 A 70         set that pick's A end angle (the arm moves if it is on side A)
+PICK 6 B 110        set its B end angle
+```
+
+Aim for each pick to cross its string cleanly on both swings without
+touching the neighbouring string. Angles are clamped to 10-170 degrees;
+that range is a placeholder, not the arm's measured travel. The commands
+change RAM only, so copy the final values into `pickA[]`/`pickB[]` in the
+sketch and re-flash to keep them.
+
 ## Step 6 — Standalone operation (no PC)
 
 Once wiring and one-channel testing are done, the board runs on its own:

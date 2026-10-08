@@ -19,6 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash tools/tests/run_tests.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: G-code inspector tests
+        run: python -m unittest test_hvs_inspect -v
+        working-directory: tools/tests
 
   chordai-tests:
     name: ChordAI tests (Python)

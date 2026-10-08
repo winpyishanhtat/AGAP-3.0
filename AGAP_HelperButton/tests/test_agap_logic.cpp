@@ -58,6 +58,27 @@ void test_findLabel_returns_minus_one_when_not_found() {
   CHECK_EQ(findLabel(labels, 3, "E"), -1);  // not a substring match, must be exact
 }
 
+// --------------------------- pick calibration ---------------------------
+
+void test_clampPickAngle_limits() {
+  CHECK_EQ(clampPickAngle(90), 90);
+  CHECK_EQ(clampPickAngle(PICK_ANGLE_MIN), PICK_ANGLE_MIN);
+  CHECK_EQ(clampPickAngle(PICK_ANGLE_MAX), PICK_ANGLE_MAX);
+  CHECK_EQ(clampPickAngle(-50), PICK_ANGLE_MIN);
+  CHECK_EQ(clampPickAngle(0), PICK_ANGLE_MIN);
+  CHECK_EQ(clampPickAngle(180), PICK_ANGLE_MAX);
+  CHECK_EQ(clampPickAngle(100000), PICK_ANGLE_MAX);
+}
+
+void test_stringToServoIndex_maps_player_numbering() {
+  CHECK_EQ(stringToServoIndex(6), 0);  // low E is servo 0
+  CHECK_EQ(stringToServoIndex(1), 5);  // high e is servo 5
+  CHECK_EQ(stringToServoIndex(3), 3);
+  CHECK_EQ(stringToServoIndex(0), -1);
+  CHECK_EQ(stringToServoIndex(7), -1);
+  CHECK_EQ(stringToServoIndex(-1), -1);
+}
+
 // --------------------------- ChannelDriver ---------------------------
 
 void test_channel_starts_off() {
@@ -258,6 +279,9 @@ void test_strummer_stop_cancels_mid_strum() {
 int main() {
   RUN(test_findLabel_matches_case_insensitively);
   RUN(test_findLabel_returns_minus_one_when_not_found);
+
+  RUN(test_clampPickAngle_limits);
+  RUN(test_stringToServoIndex_maps_player_numbering);
 
   RUN(test_channel_starts_off);
   RUN(test_channel_press_then_update_goes_pending_then_kick);

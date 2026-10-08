@@ -195,6 +195,9 @@ void printHelp(Stream& o) {
   o.println(F("STRUM [D|U]              strum the currently held chord"));
   o.println(F("SEQUENCE <l1> <l2> ...   play a progression, one strum each, TEMPO-spaced"));
   o.println(F("CALIB <label> <holdMs> <repeats> [gapMs]   repeated loaded-press test (step 5)"));
+  o.println(F("PICK <1-6> <A|B> <angle>  set one pick arm's end angle (1=high e .. 6=low E)"));
+  o.println(F("PLUCK <1-6>              swing one pick to its other side (calibration)"));
+  o.println(F("PICKS                    list every pick's A/B angles"));
   o.println(F("TEMPO <bpm>   KICK <ms>   HOLD <percent>   LABELS   STATUS   STOP"));
 }
 
@@ -313,6 +316,32 @@ void handleCommand(char* line, Stream& out) {
         updateChannels(millis());
         if (checkAbort()) { releaseAll(); out.println(F("ABORTED (STOP)")); return; }
       }
+    }
+  } else if (eq(cmd, "PICK")) {
+    // The pick arms are adjustable prints, so A/B angles are tuned on the
+    // real build. Angles are clamped to PICK_ANGLE_MIN..MAX (placeholders).
+    char* n = strtok(NULL, " 	");
+    char* side = strtok(NULL, " 	");
+    char* ang = strtok(NULL, " 	");
+    int8_t s = n ? agap::stringToServoIndex(atoi(n)) : -1;
+    bool isA = side && (side[0] == 'A' || side[0] == 'a');
+    bool isB = side && (side[0] == 'B' || side[0] == 'b');
+    if (s < 0 || !(isA || isB) || !ang) { out.println(F("ERR PICK <1-6> <A|B> <angle>")); return; }
+    uint8_t angle = agap::clampPickAngle(atoi(ang));
+    if (isA) pickA[s] = angle; else pickB[s] = angle;
+    if (isA != pickAtB[s]) picks[s].write(angle);  // arm is on that side now: move it so you can see the change
+    out.print(F("PICK ")); out.print(atoi(n)); out.print(isA ? F(" A=") : F(" B=")); out.println(angle);
+  } else if (eq(cmd, "PLUCK")) {
+    char* n = strtok(NULL, " 	");
+    int8_t s = n ? agap::stringToServoIndex(atoi(n)) : -1;
+    if (s < 0) { out.println(F("ERR PLUCK <1-6>")); return; }
+    pluck((uint8_t)s);
+    out.print(F("PLUCKED ")); out.println(atoi(n));
+  } else if (eq(cmd, "PICKS")) {
+    for (uint8_t i = 0; i < 6; i++) {
+      out.print(F("string ")); out.print(6 - i);
+      out.print(F("  A=")); out.print(pickA[i]);
+      out.print(F("  B=")); out.println(pickB[i]);
     }
   } else if (eq(cmd, "TEMPO")) {
     char* a = strtok(NULL, " \t");
