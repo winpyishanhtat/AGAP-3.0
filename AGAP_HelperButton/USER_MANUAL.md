@@ -7,6 +7,11 @@ It assumes you've read the "what's confirmed vs. placeholder" warning in
 values below are starting points, not measured specs.** Steps that need a
 real physical measurement first are marked **⚠ TBD**.
 
+> **Easiest path:** `python agap.py` from the repo root gives a menu that flashes the
+> firmware, checks the connection, and walks you through the first power-up one
+> step at a time (it saves what you confirm). The steps below are the same
+> procedure done by hand, plus the wiring.
+
 ## Can I run this with just an Arduino Mega?
 
 Two different questions, two different answers:

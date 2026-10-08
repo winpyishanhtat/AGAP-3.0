@@ -2,6 +2,27 @@
 
 A robot that plays a real guitar. **New here? Read [`docs/SYSTEM_FLOW.md`](docs/SYSTEM_FLOW.md)** for a plain-words overview and the system flow. This repo has two hardware architectures plus a standalone software piece:
 
+
+## Quick start (first time with the real board)
+
+```
+pip install -r requirements.txt     # just pyserial
+python agap.py                      # menu  (on Windows: double-click agap.bat)
+```
+
+| Step | Menu item / command | What it does |
+|---|---|---|
+| 1 | `python agap.py flash` | Compile and upload the firmware to the Mega |
+| 2 | `python agap.py doctor` | Read-only check of the connection. Says what is wrong and how to fix it. Never moves anything |
+| 3 | `python agap.py bringup` | Guided first power-up: one pick arm / one solenoid at a time, you confirm each, and results are saved |
+| 4 | `python agap.py console` | Type `chord Em`, `seq C G Am F`, `stop`; replies shown live. Ctrl+C sends STOP |
+| 5 | `docs/TUNING_GUIDE.md` | Tune kick, hold and the pick angles, then `save` |
+
+Every session is recorded in `logs/` (what was sent, what the board said). If
+something misbehaves, that transcript is the first thing to look at.
+`python agap.py selftest` runs every test on your computer. Wiring and the
+power-up order are in [`AGAP_HelperButton/USER_MANUAL.md`](AGAP_HelperButton/USER_MANUAL.md).
+
 - **[`AGAP_HelperButton/`](AGAP_HelperButton/) — current direction.** A purchased mechanical chord helper frets the strings; 10 solenoids press the helper's own buttons, 6 servos (reused) strum. Driven by Arduino firmware plus a Python sequencing layer ([`tools/agap_control.py`](tools/agap_control.py)). **Step-by-step build/setup guide: [`AGAP_HelperButton/USER_MANUAL.md`](AGAP_HelperButton/USER_MANUAL.md).** See [`README_AGAP.md`](README_AGAP.md) for the full design status, physical constraints and next steps — the firmware/software side of that document's steps 5–7 is implemented here; steps 1–4 (measuring the real helper, the solenoid, and 3D-printing a fit test) are physical work that still needs doing on the bench. Runs standalone on just the Mega once flashed (no PC needed at runtime) — but still needs per-channel solenoid drivers and external power; the Mega's pins can't power the hardware directly. See the manual's first section for the full answer.
 - **[`AGAP_Mega/`](AGAP_Mega/) — earlier direction, kept for reference.** 18 solenoids press the strings directly on frets 1–3, with an on-board AI search that swaps barre chords for open-chord voicings. Superseded by the helper-button approach above, but the chord-solving idea and strummer code are reused there.
 - **[`ChordAI/`](ChordAI/) — the "AI search engine software", standalone.** A plain-Python port of the barre-to-open chord search, with no robot/hardware needed at all — the original spec's requirement that the chord simplifier work on its own as a practice tool. Also does the reverse: name the chord from a fretted shape, then simplify it. 21 passing tests.

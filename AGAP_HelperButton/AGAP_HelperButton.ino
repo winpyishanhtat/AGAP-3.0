@@ -74,6 +74,11 @@
 
 #include "agap_logic.h"
 
+// Reported by VERSION so a PC tool can tell this sketch from any other one
+// on the board and see which build is flashed. Bump when behaviour changes.
+#define FW_NAME "AGAP-helper-button"
+#define FW_VERSION "0.4"
+
 // ============================ Button channels ============================
 const uint8_t NUM_BUTTONS = 10;
 
@@ -190,6 +195,7 @@ void stopAll() {
 bool eq(const char* a, const char* b) { return strcasecmp(a, b) == 0; }
 
 void printHelp(Stream& o) {
+  o.println(F("VERSION | PING            which firmware is flashed / is the board listening"));
   o.println(F("PRESS <label>            seat one button, no strum (wiring/fit checks)"));
   o.println(F("RELEASE <label>|ALL      drop one channel or everything"));
   o.println(F("CHORD <label>            press + strum (down)"));
@@ -305,6 +311,11 @@ void handleCommand(char* line, Stream& out) {
 
   if (eq(cmd, "HELP")) {
     printHelp(out);
+  } else if (eq(cmd, "PING")) {
+    out.println(F("PONG"));
+  } else if (eq(cmd, "VERSION")) {
+    out.print(F(FW_NAME " fw " FW_VERSION " built " __DATE__ " " __TIME__));
+    out.println();
   } else if (eq(cmd, "LABELS")) {
     printLabels(out);
   } else if (eq(cmd, "PRESS")) {
@@ -490,6 +501,7 @@ void setup() {
   for (uint8_t b = 0; b < NUM_CTRL_BTN; b++) pinMode(CTRL_BTN_PIN[b], INPUT_PULLUP);
 
   Serial.println(F("AGAP (helper-button) ready - type HELP"));
+  Serial.println(F(FW_NAME " fw " FW_VERSION));
   Serial.println(haveSaved ? F("Loaded saved tuning (EEPROM).") : F("No saved tuning - using compiled defaults."));
   Serial.println(F("All button pins, labels and timings below are PLACEHOLDERS."));
   Serial.println(F("Confirm them against README_AGAP.md steps 1, 2 and 5 before trusting any press."));
