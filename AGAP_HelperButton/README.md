@@ -43,7 +43,7 @@ against `arduino:avr:mega` (~10 KB flash, ~760 B RAM — verified in this repo).
 
 - 10 driver channels (kick-and-hold PWM via Timer2, same scheme as the
   earlier sketch) press the helper's buttons.
-- 6 servos (reused strummer hardware) strum all six strings together —
+- 6 servos (the AutoStrummer: six independent servo pods on the original clamp) strum all six strings together —
   unlike the old per-string solver, the helper frets every string at once,
   so there's no muting logic needed here.
 - `STOP` (serial command or the panel button) drops every output

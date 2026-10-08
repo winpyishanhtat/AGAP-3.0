@@ -41,7 +41,7 @@ measured; it is read by eye. It shows:
   deck, toward six strings drawn below. This matches the 6 picks, one per
   string, that the firmware drives.
 - **The teal deck sits on an "original clamp"** (grey), with four posts and
-  round feet at the corners. So the new strummer reuses an earlier part, which
+  round feet at the corners. So the strummer's pods are new prints and only the clamp is reused, which
   fits `README_AGAP.md`'s note that some strumming and support parts may be
   reusable.
 - **The two pod rows sit either side of the cutout**, so in this render the pod

@@ -27,6 +27,10 @@ Rules for the whole process:
 ## 1. Pick arms first (no solenoid power needed)
 
 1. `PICKS` to see the current angles. String numbers: 1 = high e ... 6 = low E.
+   The six pods are independent and sit in two rows of three, so which pod serves
+   which string depends on how you wired D2-D7. `PLUCK 6` shows which pod is
+   the low-E one; write the pod-to-string order down and swap signal wires if
+   it is wrong. (Wire order is fixed in the firmware, so it is a wiring fix.)
 2. `PLUCK 6` swings the low-E pick to its other side; repeat to swing back.
 3. `PICK 6 A 70` and `PICK 6 B 110` move each end. Adjust until the pick
    crosses its own string cleanly on both swings and clears the next string.

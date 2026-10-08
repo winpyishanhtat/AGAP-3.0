@@ -8,7 +8,8 @@
     10 solenoids, one per button on a purchased mechanical chord helper
     (labelled EM AM D C F DM G BM + 2 unidentified positions) press the
     helper's buttons; the helper itself frets the strings. 6 servos
-    (reused from the earlier design) strum all six strings together.
+    (the AutoStrummer: six independent servo pods on the original clamp)
+    strum all six strings together.
 
   ---------------------------------------------------------------------
   EVERY numeric value below marked "TBD" is a placeholder. README_AGAP.md
@@ -50,7 +51,10 @@
   below to match however you actually wired it - whichever is easier
   given your helper and enclosure.
 
-  Servos (reused strummer, 6th..1st string): D2 D3 D4 D5 D6 D7
+  Servos (AutoStrummer pods, 6th..1st string): D2 D3 D4 D5 D6 D7
+    The pods sit in two rows of three, so which pod serves which string depends
+    on how the signal wires go to D2-D7. Find out with PLUCK <1-6> and swap
+    wires if the order is wrong (see docs/TUNING_GUIDE.md).
   Buttons (to GND, internal pull-up): A0 STRUM  A1 NEXT  A2 PREV  A3 STOP
 
   Serial: USB 115200. One port only for now; the Python sequencer
@@ -97,7 +101,7 @@ const uint8_t  STAGGER_MS     = 4;     // spread kicks to limit inrush current
 const uint8_t  SETTLE_MS      = 15;    // TBD: wait after last kick before strumming
 const uint8_t  STRUM_GAP_MS   = 18;    // delay between strings in a strum
 
-const uint8_t SERVO_PIN[6] = {2, 3, 4, 5, 6, 7};  // reused strummer, unchanged
+const uint8_t SERVO_PIN[6] = {2, 3, 4, 5, 6, 7};  // AutoStrummer pods, string 6 first
 uint8_t pickA[6] = {70, 70, 70, 70, 70, 70};       // TBD: calibrate per string
 uint8_t pickB[6] = {110, 110, 110, 110, 110, 110};
 

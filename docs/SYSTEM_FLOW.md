@@ -19,8 +19,8 @@ The robot does it like this:
 3. Small electromagnets (**solenoids**), held in the printed **LH base**, push a button on a **chord helper**,
    a purchased device clamped to the guitar neck that presses the strings
    into a chord shape.
-4. Six small motors (**servos**) strum the strings, so the guitar makes a
-   real chord, not a synthesized one.
+4. Six small motors (**servos**), one per independent pod of the **AutoStrummer**,
+   strum the strings, so the guitar makes a real chord, not a synthesized one.
 
 The board can't power the electromagnets itself. It switches driver circuits
 (a MOSFET or relay plus a flyback diode per channel), and those drive the

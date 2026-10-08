@@ -39,7 +39,7 @@ driver electronics and external power between the board and the hardware.
 - 10× solenoid + MOSFET or relay driver + flyback diode, one set per
   button on the chord helper **⚠ TBD**: exact solenoid model depends on
   `README_AGAP.md` step 2 (not yet measured)
-- 6× hobby servo (for the strummer — can reuse the `AGAP_Mega` build's
+- 6× hobby servo, one per AutoStrummer pod (the original clamp underneath is reused; the pods are new prints; can reuse the `AGAP_Mega` build's
   strummer hardware if you have it)
 - A 12 V supply for the solenoids, sized for your real measured coil
   current × number of channels that can be on at once **⚠ TBD**
