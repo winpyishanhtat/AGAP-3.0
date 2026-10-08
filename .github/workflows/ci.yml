@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  firmware-logic-tests:
+    name: Firmware logic tests (g++)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash AGAP_HelperButton/tests/run_tests.sh
+
+  control-tool-tests:
+    name: Control tool logic tests (g++)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/tests/run_tests.sh
+
+  chordai-tests:
+    name: ChordAI tests (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m unittest test_chord_ai -v
+        working-directory: ChordAI
+
+  firmware-compile:
+    name: Compile sketches for Arduino Mega 2560
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install AVR core and Servo library
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          arduino-cli lib install Servo
+      - name: Compile AGAP_HelperButton
+        run: arduino-cli compile --fqbn arduino:avr:mega AGAP_HelperButton
+      - name: Compile AGAP_Mega
+        run: arduino-cli compile --fqbn arduino:avr:mega AGAP_Mega
+
+  control-tool-build:
+    name: Build Windows control tool (g++)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build agap_control.cpp
+        shell: bash
+        run: g++ -std=c++14 -Wall -Wextra -O2 tools/agap_control.cpp -o tools/agap_control.exe
