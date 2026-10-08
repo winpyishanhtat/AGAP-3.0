@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: G-code inspector and LH fit checker tests
-        run: python -m unittest test_hvs_inspect test_lh_fit -v
+        run: python -m unittest test_hvs_inspect test_lh_fit test_deck_drawing -v
         working-directory: tools/tests
 
   launcher-tests:

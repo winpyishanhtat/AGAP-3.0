@@ -26,7 +26,30 @@ still not supplied, since nothing here covers the helper mount.
 | **Servo pod has 6 servo bays**, in a 3 x 2 grid: columns 24.0 mm apart (X = 48.8, 72.8, 96.8), rows 47 mm apart (Y = 53.8, 100.8), each bay outline about 17.6 x 40.6 mm at the base | Matches the firmware's 6 servos (D2-D7). No change needed |
 | **6 pick arms** printed (about 7.6 x 34.6 mm each), plus 4 hole-clamp pieces | Matches 6 picks, one per string |
 | The arm is called **adjustable** | The firmware only had compile-time `pickA`/`pickB` angles, so tuning meant re-flashing. Added runtime calibration: `PICK`, `PLUCK`, `PICKS` (below), with clamped angles |
-| Central deck: 12 slots of 6.7 x 3.7 mm (four groups of three), a 72.4 x 24.4 mm central cutout, 4 slots of 3.4 x 7.4 mm, and 8 round holes (4 x 4.8 mm, 4 x 3.7 mm) | Nothing in the software depends on these |
+| **Central deck**, exact outline in the supplied drawing (below): 114 x 112 mm plate, one 72 x 24 mm cutout, 12 slots of 6.3 x 3.3 mm, 4 slots of 3 x 7 mm, 8 round holes | Nothing in the software depends on these |
+
+### Central deck: the exact drawing
+
+`docs/hardware/02_central_deck_top_view.svg` is a 1:1 top-view outline of
+`02_central_deck` (a mid-thickness section of its STL), so these are the design
+sizes, not toolpath measurements. In the file's own millimetre coordinates:
+
+- plate **114 x 112** mm, with one **72 x 24** mm cutout centred in it
+- **12 slots, 6.3 x 3.3 mm**, in four rows of three on a **20 mm pitch**:
+  x = 32, 52, 72 at y = 7 and 41; x = 42, 62, 82 at y = 71 and 105
+- 4 slots **3 x 7** mm at (16, 26), (98, 26), (16, 86), (98, 86)
+- 4 round holes **dia 4.4** at (11, 8), (103, 8), (11, 104), (103, 104)
+- 4 round holes **dia 3.3** at (5, 40), (109, 40), (5, 72), (109, 72)
+
+What this drawing does not say is what any of those features are for.
+
+**This also checks the G-code measuring method.** All 26 features measured from
+`center.hvs` match this drawing, centres to within 0.01 mm. Sizes differ by
+exactly one print line width, 0.4 mm: the outer edge measures 0.4 mm smaller
+than the design, and every hole measures 0.4 mm larger. So the rule used for
+the LH pockets (measured loop minus 0.4 mm gives the real hole) is confirmed on
+a part where the true answer is known. It was checked on one part and one
+printer setup.
 
 ### `LH.hvs` (updated design): the solenoid base
 

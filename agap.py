@@ -637,6 +637,7 @@ def selftest_plan():
         ("Launcher tests", ROOT / "tests", "test_agap"),
         ("G-code inspector tests", ROOT / "tools" / "tests", "test_hvs_inspect"),
         ("LH base fit checker tests", ROOT / "tools" / "tests", "test_lh_fit"),
+        ("Central deck drawing tests", ROOT / "tools" / "tests", "test_deck_drawing"),
     ]
     plan = [(n, cwd, mod, None) for n, cwd, mod in py]
     plan += [
