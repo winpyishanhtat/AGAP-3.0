@@ -28,6 +28,32 @@ still not supplied, since nothing here covers the helper mount.
 | The arm is called **adjustable** | The firmware only had compile-time `pickA`/`pickB` angles, so tuning meant re-flashing. Added runtime calibration: `PICK`, `PLUCK`, `PICKS` (below), with clamped angles |
 | **Central deck**, exact outline in the supplied drawing (below): 114 x 112 mm plate, one 72 x 24 mm cutout, 12 slots of 6.3 x 3.3 mm, 4 slots of 3 x 7 mm, 8 round holes | Nothing in the software depends on these |
 
+### Prototype v1 render (strummer assembly)
+
+`docs/hardware/prototype_v1_render.jpg` is a 3D render titled "AutoStrummer |
+six independent servo pods, Prototype v1" (grey = original clamp, teal = new
+prints, dark = servo envelopes). It is an image only, so nothing below is
+measured; it is read by eye. It shows:
+
+- **Six independent servo pods in two rows of three**, with a servo envelope
+  (dark block) in each. This matches the 3 x 2 grid in the servo-pod print file.
+- **Six pick arms** (orange) hanging down through the **central cutout** of the
+  deck, toward six strings drawn below. This matches the 6 picks, one per
+  string, that the firmware drives.
+- **The teal deck sits on an "original clamp"** (grey), with four posts and
+  round feet at the corners. So the new strummer reuses an earlier part, which
+  fits `README_AGAP.md`'s note that some strumming and support parts may be
+  reusable.
+- **The two pod rows sit either side of the cutout**, so in this render the pod
+  and the deck do combine. That makes the hole-alignment mismatch described
+  under the central-deck section more likely a difference between the print
+  files and this render (different versions) than a design intent. Worth
+  checking that they are the same version.
+
+What it does not show: the solenoids, the LH base or the chord helper (it is the
+strummer only); which servo drives which string; the servo's real size (the dark
+blocks are labelled "envelopes", not a model); or the pick-arm travel.
+
 ### Central deck: the exact drawing
 
 `docs/hardware/02_central_deck_top_view.svg` is a 1:1 top-view outline of
