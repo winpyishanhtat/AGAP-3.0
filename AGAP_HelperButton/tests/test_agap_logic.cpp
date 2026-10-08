@@ -79,6 +79,96 @@ void test_stringToServoIndex_maps_player_numbering() {
   CHECK_EQ(stringToServoIndex(-1), -1);
 }
 
+// --------------------------- saved tuning ---------------------------
+
+static Tuning sampleTuning() {
+  Tuning t{};
+  t.kickMs = 85;
+  t.holdDuty = 90;
+  t.bpm = 72;
+  for (uint8_t i = 0; i < 6; i++) { t.pickA[i] = 60 + i; t.pickB[i] = 120 + i; }
+  return t;
+}
+
+void test_tuning_roundtrip() {
+  uint8_t buf[TUNING_BYTES];
+  encodeTuning(sampleTuning(), buf);
+  Tuning got{};
+  CHECK(decodeTuning(buf, got));
+  CHECK_EQ(got.kickMs, 85);
+  CHECK_EQ(got.holdDuty, 90);
+  CHECK_EQ(got.bpm, 72);
+  for (uint8_t i = 0; i < 6; i++) {
+    CHECK_EQ(got.pickA[i], 60 + i);
+    CHECK_EQ(got.pickB[i], 120 + i);
+  }
+}
+
+void test_tuning_rejects_blank_eeprom() {
+  uint8_t blank[TUNING_BYTES], zeros[TUNING_BYTES] = {0};
+  for (auto& b : blank) b = 0xFF;  // erased EEPROM reads 0xFF
+  Tuning t{};
+  CHECK(!decodeTuning(blank, t));
+  CHECK(!decodeTuning(zeros, t));
+}
+
+void test_tuning_detects_any_single_corrupted_byte() {
+  uint8_t buf[TUNING_BYTES];
+  encodeTuning(sampleTuning(), buf);
+  for (uint8_t i = 0; i < TUNING_BYTES; i++) {
+    uint8_t bad[TUNING_BYTES];
+    for (uint8_t k = 0; k < TUNING_BYTES; k++) bad[k] = buf[k];
+    bad[i] ^= 0x10;
+    Tuning t{};
+    CHECK(!decodeTuning(bad, t));
+  }
+}
+
+void test_tuning_rejects_other_version() {
+  uint8_t buf[TUNING_BYTES];
+  encodeTuning(sampleTuning(), buf);
+  buf[2] = TUNING_VERSION + 1;
+  buf[TUNING_BYTES - 1] = tuningChecksum(buf, TUNING_BYTES - 1);  // valid checksum, wrong version
+  Tuning t{};
+  CHECK(!decodeTuning(buf, t));
+}
+
+void test_tuning_decode_leaves_output_untouched_on_failure() {
+  Tuning t = sampleTuning();
+  uint8_t blank[TUNING_BYTES];
+  for (auto& b : blank) b = 0xFF;
+  CHECK(!decodeTuning(blank, t));
+  CHECK_EQ(t.kickMs, 85);
+}
+
+void test_sanitize_clamps_everything() {
+  Tuning t{};
+  t.kickMs = 5000; t.bpm = 1; t.holdDuty = 255;
+  for (uint8_t i = 0; i < 6; i++) { t.pickA[i] = 0; t.pickB[i] = 255; }
+  sanitizeTuning(t);
+  CHECK_EQ(t.kickMs, KICK_MS_MAX);
+  CHECK_EQ(t.bpm, BPM_MIN);
+  CHECK_EQ(t.pickA[0], PICK_ANGLE_MIN);
+  CHECK_EQ(t.pickB[5], PICK_ANGLE_MAX);
+  t.kickMs = 1; t.bpm = 999;
+  sanitizeTuning(t);
+  CHECK_EQ(t.kickMs, KICK_MS_MIN);
+  CHECK_EQ(t.bpm, BPM_MAX);
+}
+
+void test_out_of_range_saved_values_are_clamped_on_load() {
+  // A valid checksum doesn't make the values safe: load must still clamp.
+  Tuning t = sampleTuning();
+  t.kickMs = 9000;
+  t.pickA[2] = 3;
+  uint8_t buf[TUNING_BYTES];
+  encodeTuning(t, buf);
+  Tuning got{};
+  CHECK(decodeTuning(buf, got));
+  CHECK_EQ(got.kickMs, KICK_MS_MAX);
+  CHECK_EQ(got.pickA[2], PICK_ANGLE_MIN);
+}
+
 // --------------------------- ChannelDriver ---------------------------
 
 void test_channel_starts_off() {
@@ -107,6 +197,21 @@ void test_channel_kick_transitions_to_hold_after_kickMs() {
   d.update(59);
   CHECK(d.stateOf(0) == ChanState::KICK);
   d.update(60);  // exactly kickMs - must have seated by now
+  CHECK(d.stateOf(0) == ChanState::HOLD);
+}
+
+void test_setKickMs_changes_the_kick_duration() {
+  // The KICK command must change how long the coil really gets full power,
+  // not just a number the firmware prints back.
+  ChannelDriver<10> d(/*kickMs=*/60, 8000);
+  d.setKickMs(120);
+  d.press(0, 0, 0);
+  d.update(0);  // -> KICK
+  d.update(60);  // old duration: would already be HOLD
+  CHECK(d.stateOf(0) == ChanState::KICK);
+  d.update(119);
+  CHECK(d.stateOf(0) == ChanState::KICK);
+  d.update(120);
   CHECK(d.stateOf(0) == ChanState::HOLD);
 }
 
@@ -283,9 +388,18 @@ int main() {
   RUN(test_clampPickAngle_limits);
   RUN(test_stringToServoIndex_maps_player_numbering);
 
+  RUN(test_tuning_roundtrip);
+  RUN(test_tuning_rejects_blank_eeprom);
+  RUN(test_tuning_detects_any_single_corrupted_byte);
+  RUN(test_tuning_rejects_other_version);
+  RUN(test_tuning_decode_leaves_output_untouched_on_failure);
+  RUN(test_sanitize_clamps_everything);
+  RUN(test_out_of_range_saved_values_are_clamped_on_load);
+
   RUN(test_channel_starts_off);
   RUN(test_channel_press_then_update_goes_pending_then_kick);
   RUN(test_channel_kick_transitions_to_hold_after_kickMs);
+  RUN(test_setKickMs_changes_the_kick_duration);
   RUN(test_masks_kick_vs_hold);
   RUN(test_masks_split_across_porta_and_portc);
   RUN(test_channel_auto_releases_after_timeout);

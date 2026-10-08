@@ -146,6 +146,8 @@ all ten.
    HOLD 60       set the hold-phase duty, 0-100 (percent)
    ```
 
+Full tuning order, with what to watch for at each step: [`../docs/TUNING_GUIDE.md`](../docs/TUNING_GUIDE.md). `SAVE` keeps tuned values across power-off.
+
 ## Step 5b — Tune each pick arm (strummer)
 
 The printed pick arms are adjustable (`../docs/HARDWARE_SPECS.md`), so set

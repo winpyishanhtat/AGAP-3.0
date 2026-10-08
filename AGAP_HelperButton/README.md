@@ -54,7 +54,7 @@ against `arduino:avr:mega` (~10 KB flash, ~760 B RAM — verified in this repo).
 See the in-sketch `HELP` command, or the header comment, for the full
 command list: `PRESS`, `RELEASE`, `CHORD`, `STRUM`, `SEQUENCE`, `CALIB`,
 `TEMPO`, `KICK`, `HOLD`, `STATUS`, `STOP`, `LABELS`, plus pick-arm
-calibration `PICK`, `PLUCK`, `PICKS`. Printed-part measurements and what
+calibration `PICK`, `PLUCK`, `PICKS`, and `SAVE`/`LOAD`/`DEFAULTS` for tuned values (EEPROM). How to tune: [`../docs/TUNING_GUIDE.md`](../docs/TUNING_GUIDE.md). Printed-part measurements and what
 they do and don't establish: [`../docs/HARDWARE_SPECS.md`](../docs/HARDWARE_SPECS.md).
 
 ### Tested logic (`agap_logic.h`)
@@ -71,7 +71,7 @@ cd tests
 ./run_tests.sh        # or: g++ -std=c++14 -I.. test_agap_logic.cpp -o t && ./t
 ```
 
-74 checks: label lookup, every channel-state transition (including the
+141 checks: label lookup, every channel-state transition (including the
 PORTA/PORTC register-boundary split at channel 8, the kick→hold duty
 switch, and the timeout/refresh timing), and strum ordering in both
 directions. Runs on any machine with g++ — no board, no Arduino IDE.

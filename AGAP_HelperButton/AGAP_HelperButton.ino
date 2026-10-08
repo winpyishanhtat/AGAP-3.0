@@ -66,6 +66,7 @@
   its tests, not here.
 */
 
+#include <EEPROM.h>
 #include <Servo.h>
 #include <util/atomic.h>
 #include <string.h>
@@ -198,6 +199,7 @@ void printHelp(Stream& o) {
   o.println(F("PICK <1-6> <A|B> <angle>  set one pick arm's end angle (1=high e .. 6=low E)"));
   o.println(F("PLUCK <1-6>              swing one pick to its other side (calibration)"));
   o.println(F("PICKS                    list every pick's A/B angles"));
+  o.println(F("SAVE | LOAD | DEFAULTS   keep tuning across power-off / reload it / go back to compiled values"));
   o.println(F("TEMPO <bpm>   KICK <ms>   HOLD <percent>   LABELS   STATUS   STOP"));
 }
 
@@ -207,6 +209,48 @@ void printLabels(Stream& o) {
 }
 
 uint16_t bpm = 50;
+
+// ---------------------------- saved tuning ----------------------------
+// SAVE stores the tuned values (kick, hold, tempo, pick angles) in EEPROM and
+// the next power-up loads them; DEFAULTS goes back to the compiled values.
+// The encoding, checksum and range-clamping live in agap_logic.h (tested).
+agap::Tuning compiledDefaults;  // snapshot of the values above, taken at boot
+
+agap::Tuning currentTuning() {
+  agap::Tuning t;
+  t.kickMs = kickMs;
+  t.holdDuty = holdDuty;
+  t.bpm = bpm;
+  for (uint8_t i = 0; i < 6; i++) { t.pickA[i] = pickA[i]; t.pickB[i] = pickB[i]; }
+  return t;
+}
+
+void applyTuning(const agap::Tuning& t) {
+  kickMs = t.kickMs;
+  channels.setKickMs(kickMs);  // the driver keeps its own copy of the kick time
+  holdDuty = t.holdDuty;
+  OCR2A = holdDuty;
+  bpm = t.bpm;
+  for (uint8_t i = 0; i < 6; i++) {
+    pickA[i] = t.pickA[i];
+    pickB[i] = t.pickB[i];
+    picks[i].write(pickAtB[i] ? pickB[i] : pickA[i]);
+  }
+}
+
+bool readSavedTuning(agap::Tuning& t) {
+  uint8_t buf[agap::TUNING_BYTES];
+  for (uint8_t i = 0; i < agap::TUNING_BYTES; i++) buf[i] = EEPROM.read(i);
+  return agap::decodeTuning(buf, t);
+}
+
+bool writeSavedTuning(const agap::Tuning& t) {
+  uint8_t buf[agap::TUNING_BYTES];
+  agap::encodeTuning(t, buf);
+  for (uint8_t i = 0; i < agap::TUNING_BYTES; i++) EEPROM.update(i, buf[i]);  // update() skips unchanged bytes (EEPROM wear)
+  agap::Tuning check;
+  return readSavedTuning(check);  // read it back: confirms the write took
+}
 
 char    lineBuf[96];
 uint8_t lineLen = 0;
@@ -345,17 +389,31 @@ void handleCommand(char* line, Stream& out) {
     }
   } else if (eq(cmd, "TEMPO")) {
     char* a = strtok(NULL, " \t");
-    bpm = constrain(a ? atoi(a) : bpm, 20, 200);
+    bpm = constrain(a ? atoi(a) : bpm, agap::BPM_MIN, agap::BPM_MAX);
     out.print(F("TEMPO ")); out.println(bpm);
   } else if (eq(cmd, "KICK")) {
     char* a = strtok(NULL, " \t");
-    kickMs = constrain(a ? atoi(a) : kickMs, 10, 300);
+    kickMs = constrain(a ? atoi(a) : kickMs, agap::KICK_MS_MIN, agap::KICK_MS_MAX);
+    channels.setKickMs(kickMs);
     out.print(F("KICK ms ")); out.println(kickMs);
   } else if (eq(cmd, "HOLD")) {
     char* a = strtok(NULL, " \t");
     holdDuty = (uint16_t)constrain(a ? atoi(a) : 30, 0, 100) * 255 / 100;
     OCR2A = holdDuty;
     out.print(F("HOLD duty ")); out.println(holdDuty);
+  } else if (eq(cmd, "SAVE")) {
+    if (writeSavedTuning(currentTuning())) {
+      out.println(F("SAVED - loads automatically at power-up"));
+    } else {
+      out.println(F("ERR could not verify the EEPROM write"));
+    }
+  } else if (eq(cmd, "LOAD")) {
+    agap::Tuning t;
+    if (readSavedTuning(t)) { applyTuning(t); out.println(F("LOADED saved tuning")); }
+    else out.println(F("ERR no valid saved tuning (SAVE one first)"));
+  } else if (eq(cmd, "DEFAULTS")) {
+    applyTuning(compiledDefaults);
+    out.println(F("Back to compiled defaults (not saved - send SAVE to keep them)"));
   } else if (eq(cmd, "STOP")) {
     stopAll();
     out.println(F("STOPPED"));
@@ -363,7 +421,8 @@ void handleCommand(char* line, Stream& out) {
     out.print(F("button ")); out.println(curButton >= 0 ? BUTTON_LABEL[curButton] : "none");
     out.print(F("bpm=")); out.print(bpm);
     out.print(F(" kick=")); out.print(kickMs);
-    out.print(F(" holdDuty=")); out.println(holdDuty);
+    out.print(F(" holdDuty=")); out.print(holdDuty);
+    out.print(F(" (")); out.print((uint16_t)holdDuty * 100 / 255); out.println(F("%)"));
   } else {
     out.println(F("ERR unknown command, type HELP"));
   }
@@ -422,11 +481,16 @@ void pollSerial() {
 // ============================== Main ==============================
 void setup() {
   Serial.begin(115200);
+  compiledDefaults = currentTuning();
+  agap::Tuning saved;
+  bool haveSaved = readSavedTuning(saved);
+  if (haveSaved) applyTuning(saved);  // before driverBegin()/servo attach, which use these values
   driverBegin();
   for (uint8_t s = 0; s < 6; s++) { picks[s].attach(SERVO_PIN[s]); picks[s].write(pickA[s]); }
   for (uint8_t b = 0; b < NUM_CTRL_BTN; b++) pinMode(CTRL_BTN_PIN[b], INPUT_PULLUP);
 
   Serial.println(F("AGAP (helper-button) ready - type HELP"));
+  Serial.println(haveSaved ? F("Loaded saved tuning (EEPROM).") : F("No saved tuning - using compiled defaults."));
   Serial.println(F("All button pins, labels and timings below are PLACEHOLDERS."));
   Serial.println(F("Confirm them against README_AGAP.md steps 1, 2 and 5 before trusting any press."));
   printLabels(Serial);

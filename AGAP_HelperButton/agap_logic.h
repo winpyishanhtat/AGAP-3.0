@@ -63,6 +63,80 @@ inline int8_t stringToServoIndex(int stringNumber) {
   return (stringNumber >= 1 && stringNumber <= 6) ? (int8_t)(6 - stringNumber) : (int8_t)-1;
 }
 
+// ===================== Saved tuning (EEPROM image) =====================
+// What gets tuned on the real build: the kick pulse, the hold power, the
+// tempo, and each pick arm's two end angles. SAVE writes this block to EEPROM
+// and the next power-up loads it, so tuning survives a power cycle.
+//
+// The block is encoded byte by byte (not by copying a struct) so the layout
+// is the same on AVR and on the host, and it carries a magic number, a
+// version and a checksum so an empty or corrupted EEPROM is rejected and the
+// firmware falls back to its compiled defaults instead of using garbage.
+struct Tuning {
+  uint16_t kickMs;
+  uint8_t holdDuty;  // 0-255 PWM duty while holding
+  uint16_t bpm;
+  uint8_t pickA[6];
+  uint8_t pickB[6];
+};
+
+constexpr uint16_t TUNING_MAGIC = 0xA6A9;
+constexpr uint8_t TUNING_VERSION = 1;
+constexpr uint8_t TUNING_BYTES = 21;
+constexpr uint16_t KICK_MS_MIN = 10, KICK_MS_MAX = 300;
+constexpr uint16_t BPM_MIN = 20, BPM_MAX = 200;
+
+// Forces every field into its allowed range (the same limits the serial
+// commands enforce), so a stored or typed value can't exceed them.
+inline void sanitizeTuning(Tuning& t) {
+  if (t.kickMs < KICK_MS_MIN) t.kickMs = KICK_MS_MIN;
+  if (t.kickMs > KICK_MS_MAX) t.kickMs = KICK_MS_MAX;
+  if (t.bpm < BPM_MIN) t.bpm = BPM_MIN;
+  if (t.bpm > BPM_MAX) t.bpm = BPM_MAX;
+  for (uint8_t i = 0; i < 6; i++) {
+    t.pickA[i] = clampPickAngle(t.pickA[i]);
+    t.pickB[i] = clampPickAngle(t.pickB[i]);
+  }
+}
+
+inline uint8_t tuningChecksum(const uint8_t* b, uint8_t n) {
+  uint8_t c = 0xA5;
+  for (uint8_t i = 0; i < n; i++) c = (uint8_t)(((c << 1) | (c >> 7)) ^ b[i]);
+  return c;
+}
+
+inline void encodeTuning(const Tuning& t, uint8_t out[TUNING_BYTES]) {
+  uint8_t i = 0;
+  out[i++] = (uint8_t)(TUNING_MAGIC & 0xFF);
+  out[i++] = (uint8_t)(TUNING_MAGIC >> 8);
+  out[i++] = TUNING_VERSION;
+  out[i++] = (uint8_t)(t.kickMs & 0xFF);
+  out[i++] = (uint8_t)(t.kickMs >> 8);
+  out[i++] = t.holdDuty;
+  out[i++] = (uint8_t)(t.bpm & 0xFF);
+  out[i++] = (uint8_t)(t.bpm >> 8);
+  for (uint8_t k = 0; k < 6; k++) out[i++] = t.pickA[k];
+  for (uint8_t k = 0; k < 6; k++) out[i++] = t.pickB[k];
+  out[i] = tuningChecksum(out, TUNING_BYTES - 1);
+}
+
+// Returns false (leaving `out` untouched) for blank, foreign, wrong-version
+// or corrupted data.
+inline bool decodeTuning(const uint8_t in[TUNING_BYTES], Tuning& out) {
+  if ((uint16_t)(in[0] | (in[1] << 8)) != TUNING_MAGIC) return false;
+  if (in[2] != TUNING_VERSION) return false;
+  if (in[TUNING_BYTES - 1] != tuningChecksum(in, TUNING_BYTES - 1)) return false;
+  Tuning t;
+  t.kickMs = (uint16_t)(in[3] | (in[4] << 8));
+  t.holdDuty = in[5];
+  t.bpm = (uint16_t)(in[6] | (in[7] << 8));
+  for (uint8_t k = 0; k < 6; k++) t.pickA[k] = in[8 + k];
+  for (uint8_t k = 0; k < 6; k++) t.pickB[k] = in[14 + k];
+  sanitizeTuning(t);
+  out = t;
+  return true;
+}
+
 // ===================== Kick-and-hold channel driver =====================
 // One instance of this replaces AGAP_HelperButton.ino's chanState[]/
 // chanTime[]/chanRefresh[] arrays plus rebuildMasks()/updateChannels()/
@@ -106,6 +180,9 @@ class ChannelDriver {
     }
     refresh_[i] = now;
   }
+
+  // Takes effect for any kick that starts or is still running afterwards.
+  void setKickMs(uint16_t kickMs) { kickMs_ = kickMs; }
 
   void release(uint8_t i) { state_[i] = ChanState::OFF; }
 
