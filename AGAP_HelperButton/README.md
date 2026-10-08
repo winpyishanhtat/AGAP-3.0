@@ -7,6 +7,12 @@ instead of pressing the strings directly. It replaces the earlier
 [`../AGAP_Mega`](../AGAP_Mega) design (18 solenoids on individual
 frets), kept in this repo for reference only.
 
+**New to this build? Start with [`USER_MANUAL.md`](USER_MANUAL.md)** — a
+step-by-step walkthrough from flashing the firmware to playing a chord,
+including wiring, safe power-up order, and whether this needs a PC to run
+(short answer: not at runtime, but it does need driver electronics — see
+the manual's first section).
+
 ## What's here vs. what's still physical work
 
 `README_AGAP.md` section 9 lists 7 steps. This system is the **software and

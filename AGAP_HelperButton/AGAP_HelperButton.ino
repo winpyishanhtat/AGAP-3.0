@@ -42,8 +42,13 @@
     5 DM  D27   6 G   D28   7 BM  D29   8 X1  D37   9 X2  D36
   Labels and this pin order are a GUESS from the photographed layout in
   README_AGAP.md section 2. Re-confirm against the real chord chart
-  before wiring (step 1), then edit BUTTON_PIN[] / BUTTON_LABEL[] to
-  match reality - don't assume this order is correct.
+  before wiring (step 1). Channels 0-9 are fixed to D22-D29/D37/D36 by
+  the direct PORTA/PORTC register writes in agap_logic.h - there's no
+  per-channel pin variable to edit. To remap which label means which
+  physical button, either wire that button to the pin matching its
+  intended channel index (the list above), or reorder BUTTON_LABEL[]
+  below to match however you actually wired it - whichever is easier
+  given your helper and enclosure.
 
   Servos (reused strummer, 6th..1st string): D2 D3 D4 D5 D6 D7
   Buttons (to GND, internal pull-up): A0 STRUM  A1 NEXT  A2 PREV  A3 STOP
