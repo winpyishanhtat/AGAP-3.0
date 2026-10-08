@@ -89,3 +89,11 @@ This module is independent of both hardware designs in this repo
 and doesn't require either. The original spec asked for it to work that
 way — a search engine a guitarist could use on its own as a learning tool,
 separate from the physical robot.
+
+## Web version
+
+`web/index.html` is the same solver as a single-page browser app (no server, no install): simplify a chord, a whole progression, or name a fretted shape, with chord diagrams. `web/chord_ai.js` is a JavaScript port of `chord_ai.py`; `web/parity_test.js` checks it against the Python on every root, chord quality and fret range (538 checks, also run in CI).
+
+To try it locally: `cd web && python -m http.server` then open http://localhost:8000.
+
+To publish it: in the GitHub repo go to Settings -> Pages -> Source: "GitHub Actions", then run the "Deploy ChordAI web page" workflow from the Actions tab.
