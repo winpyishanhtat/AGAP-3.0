@@ -596,6 +596,14 @@ class TestFlashAndRepo(unittest.TestCase):
     def test_design_file_suite_is_in_the_plan(self):
         self.assertIn("test_real_parts", [m for _, _, m, _ in agap.selftest_plan()])
 
+    def test_control_tool_suites_are_in_the_plan(self):
+        names = [n for n, _, _, _ in agap.selftest_plan()]
+        sources = [c for _, _, _, c in agap.selftest_plan()]
+        mods = [m for _, _, m, _ in agap.selftest_plan()]
+        self.assertIn("test_agap_control_fret.cpp", sources)
+        self.assertIn("test_control_e2e", mods)
+        self.assertTrue(any("fretboard" in n.lower() and "control" in n.lower() for n in names))
+
     def test_end_to_end_suite_is_in_the_plan(self):
         self.assertIn("test_agap_e2e", [m for _, _, m, _ in agap.selftest_plan()])
 

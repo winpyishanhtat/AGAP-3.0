@@ -99,13 +99,21 @@
 
   function validChordName(s) { return typeof s === "string" && CHORD_RE.test(s); }
 
-  function parseProgression(text) {
+  // `max` is how many chords the board takes in one sequence; the bridge reports it (sequenceLimit).
+  function parseProgression(text, max) {
+    var limit = max >= 1 && max <= MAX_SEQUENCE ? Math.floor(max) : MAX_SEQUENCE;
     var names = String(text || "").split(/[\s,]+/).filter(Boolean);
     if (!names.length) return { ok: false, error: "Add at least one chord." };
-    if (names.length > MAX_SEQUENCE) return { ok: false, error: "At most " + MAX_SEQUENCE + " chords." };
+    if (names.length > limit) return { ok: false, error: "At most " + limit + " chords in one sequence." };
     for (var i = 0; i < names.length; i++)
       if (!validChordName(names[i])) return { ok: false, error: "'" + names[i] + "' is not a chord name." };
     return { ok: true, chords: names };
+  }
+
+  // The sequence length this bridge/board accepts, from /api/status; falls back to the largest allowed.
+  function sequenceLimit(status) {
+    var n = status && Number(status.max_sequence);
+    return n >= 1 && n <= MAX_SEQUENCE ? Math.floor(n) : MAX_SEQUENCE;
   }
 
   function clampBpm(v) {
@@ -156,7 +164,7 @@
     STRING_NAMES: STRING_NAMES, MAX_FRET: MAX_FRET, ACTIONS: ACTIONS,
     CHORD_GROUPS: CHORD_GROUPS, PRESETS: PRESETS,
     parseFingering: parseFingering, latestFingering: latestFingering, fretboardModel: fretboardModel, boardKey: boardKey, sameChord: sameChord,
-    validChordName: validChordName, parseProgression: parseProgression,
+    validChordName: validChordName, parseProgression: parseProgression, sequenceLimit: sequenceLimit,
     clampBpm: clampBpm, beatMs: beatMs, uiState: uiState, offlineReason: offlineReason, markUnreachable: markUnreachable, canSend: canSend, difficulty: difficulty
   };
 });

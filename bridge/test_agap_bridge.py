@@ -335,6 +335,31 @@ class TestFretboardMode(unittest.TestCase):
                 b.execute({"action": "sequence", **body})
         self.assertEqual(link.written, [])
 
+    def test_fretboard_sequence_is_capped_at_the_firmware_limit_of_12(self):
+        # AGAP_Fretboard.ino answers "ERR too many chords" beyond MAX_PROG = 12; the bridge must not
+        # accept 13-16 and then report "busy" for a sequence the board never plays.
+        b, link, clock = make_fret()
+        b.execute({"action": "sequence", "targets": ["C"] * 12, "bpm": 60})
+        self.assertEqual(len(link.written[-1].split()) - 1, 12)
+        clock.advance(100)
+        for n in (13, 16):
+            with self.assertRaises(ab.CommandError) as cm:
+                b.execute({"action": "sequence", "targets": ["C"] * n, "bpm": 60})
+            self.assertEqual(cm.exception.status, 400)
+            self.assertIn("12", cm.exception.message)
+        self.assertFalse(b.status()["busy"])
+
+    def test_earlier_helper_build_keeps_its_limit_of_16(self):
+        b, link, clock = make()
+        b.execute({"action": "sequence", "targets": ["C"] * 16, "bpm": 60})
+        clock.advance(100)
+        with self.assertRaises(ab.CommandError):
+            b.execute({"action": "sequence", "targets": ["C"] * 17, "bpm": 60})
+
+    def test_status_tells_the_page_the_limit(self):
+        self.assertEqual(make_fret()[0].status()["max_sequence"], 12)
+        self.assertEqual(make()[0].status()["max_sequence"], 16)
+
     def test_press_and_release_take_only_a_string_and_a_fret(self):
         b, link, clock = make_fret()
         b.execute({"action": "press", "string": 6, "fret": 1})

@@ -142,6 +142,21 @@ test("empty and over-long progressions are refused", () => {
   assert.strictEqual(U.parseProgression(new Array(17).fill("C").join(" ")).ok, false);
   assert.strictEqual(U.parseProgression(new Array(16).fill("C").join(" ")).ok, true);
 });
+test("the progression limit follows the board: 12 for the fretboard firmware, 16 by default", () => {
+  assert.strictEqual(U.parseProgression(new Array(12).fill("C").join(" "), 12).ok, true);
+  assert.strictEqual(U.parseProgression(new Array(13).fill("C").join(" "), 12).ok, false);
+  assert.ok(U.parseProgression(new Array(13).fill("C").join(" "), 12).error.indexOf("12") >= 0);
+  assert.strictEqual(U.parseProgression(new Array(16).fill("C").join(" ")).ok, true);
+  assert.strictEqual(U.parseProgression(new Array(17).fill("C").join(" ")).ok, false);
+  assert.strictEqual(U.parseProgression("C G", 0).ok, true, "a nonsense limit falls back to the default");
+});
+test("the limit the page learns from the bridge is clamped to something sane", () => {
+  assert.strictEqual(U.sequenceLimit({ max_sequence: 12 }), 12);
+  assert.strictEqual(U.sequenceLimit({}), 16);
+  assert.strictEqual(U.sequenceLimit(null), 16);
+  assert.strictEqual(U.sequenceLimit({ max_sequence: 9999 }), 16);
+  assert.strictEqual(U.sequenceLimit({ max_sequence: "x" }), 16);
+});
 test("tempo is clamped to the bridge's 20-200 range", () => {
   assert.strictEqual(U.clampBpm(5), 20); assert.strictEqual(U.clampBpm(500), 200);
   assert.strictEqual(U.clampBpm("90"), 90); assert.strictEqual(U.clampBpm("abc"), 50);

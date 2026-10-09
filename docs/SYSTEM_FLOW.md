@@ -88,7 +88,7 @@ pick a *good* shape rather than to avoid a hard one.
 | `AGAP_Fretboard/` | **Final design firmware**: 30 solenoids, on-board chord search, manual |
 | `AGAP_HelperButton/` | Earlier design: 10 solenoids pressing a purchased chord helper (kept for reference) |
 | `AGAP_Mega/` | First design: 18 solenoids on frets 1-3 (kept for reference) |
-| `tools/` | PC tools: C++ and Python control tools (earlier helper protocol), part measuring (`hvs_inspect.py`, `stl_inspect.py`, `lh_fit.py`) |
+| `tools/` | PC tools: the C++ control tool (fretboard firmware by default, `--helper` for the earlier one), a Python control tool for the earlier helper protocol, part measuring (`hvs_inspect.py`, `stl_inspect.py`, `lh_fit.py`) |
 | `bridge/` | Remote-control bridge and phone page (see its README for what it supports) |
 | `ChordAI/` | Chord simplifier (Python, plus the browser version in `web/`) |
 | `agap.py` | Launcher: doctor, bring-up, console, flash, selftest |

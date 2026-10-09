@@ -96,6 +96,25 @@ agap> stop
 Or press the panel buttons: STRUM, NEXT and PREV step through the progression
 (default `C G Am F`; change it with `PROG`), STOP releases everything.
 
+**Without Python: the C++ command-line tool.** One executable, nothing to install but a C++ compiler
+(Windows, Linux, macOS, Raspberry Pi):
+
+```text
+g++ -std=c++14 -O2 tools/agap_control.cpp -o agap_control        # agap_control.exe on Windows
+agap_control ports
+agap_control --port COM5 chord Bm            # sends CHORD Bm, then draws the fingering the board answered
+agap_control --port COM5 show F#m7           # fingering only, nothing moves
+agap_control --port COM5 sequence C G Am F --bpm 60
+agap_control --port COM5 press 6 1           # string 6 (low E), fret 1
+agap_control --port COM5 stop
+```
+
+It checks every argument before opening the port and refuses anything the firmware would refuse
+(a sequence over 12 chords, a tempo outside 20-200, a string outside 1-6, a chord name with odd
+characters), so a typo costs nothing, not a 2-second board reset. The exit code is 1 if the board
+answered `ERR`, so scripts can tell. Add `--helper` for the earlier chord-helper firmware, and it warns
+if the board says it runs the other firmware.
+
 ## If something goes wrong
 
 | Symptom | Likely cause |

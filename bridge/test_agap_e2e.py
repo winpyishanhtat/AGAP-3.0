@@ -211,6 +211,27 @@ class TestRealFirmwareThroughTheBridge(unittest.TestCase):
 
 
 @need_gpp
+class TestSequenceLengthMatchesTheFirmware(unittest.TestCase):
+    """The bridge and the real firmware must agree on how long a sequence may be. They did not: the
+    bridge allowed 16 while the firmware refused anything over 12 (found by driving the real sketch)."""
+
+    def test_twelve_chords_play_and_thirteen_never_reach_the_firmware(self):
+        rig = Rig()
+        try:
+            self.assertEqual(rig.post({"action": "sequence", "targets": ["C"] * 12, "bpm": 200})[0], 200)
+            rig.wait_for(lambda ls: sum(1 for x in ls if x.startswith("STEP")) >= 12, "twelve steps", timeout=15)
+            self.assertFalse(any("too many chords" in x for x in rig.lines()))
+            rig.wait_for(lambda ls: not rig.bridge.status()["busy"], "the sequence to finish", timeout=15)
+            time.sleep(0.2)
+            status, body = rig.post({"action": "sequence", "targets": ["C"] * 13, "bpm": 200})
+            self.assertEqual(status, 400)
+            self.assertFalse(any("too many chords" in x for x in rig.lines()))   # refused at the bridge, so the board never saw it
+            self.assertEqual(rig.harness("status")["violations"], "0")
+        finally:
+            rig.close()
+
+
+@need_gpp
 class TestForgottenCoilLetsGo(unittest.TestCase):
     def test_a_coil_nobody_refreshes_releases_itself_after_8_seconds(self):
         """If the phone, the bridge or the USB cable dies while a chord is held, the board must not

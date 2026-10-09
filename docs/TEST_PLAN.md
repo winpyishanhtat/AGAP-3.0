@@ -18,6 +18,7 @@ tests"). CI runs the same suites on every push.
 | ChordAI | Python solver; the JavaScript on the web page matches it | 26 tests + 572 parity checks |
 | Launcher, bridge | Doctor, bring-up, console, flash command, remote bridge (auth, injection attempts, limits, STOP priority) | 64 + 40 tests |
 | **Whole chain on the real firmware logic** | The phone page's logic, the bridge, and the **real `AGAP_Fretboard.ino`** (compiled for the PC against a mock Arduino): a chord sent over HTTP is solved by the firmware's own code, the page reads its reply, and the simulated coil pins are counted and compared with what the page would draw. See Phase 1c | 14 tests |
+| **C++ control tool** | `tools/agap_control.cpp` (fretboard commands, strict arguments, drawn fingering, exit codes): 212 native unit checks of its planner, plus 15 tests that run the **compiled tool** against the real firmware logic through its `--stdio` transport. See Phase 1c | 212 checks + 15 tests |
 | **Phone page** | What the bridge serves and forbids, the page source (no outside code), page rules identical to the bridge's, the page reading every simulated board reply, and the whole flow over HTTP. See Phase 1b | 31 Python tests + 44 JavaScript checks |
 | Part measuring | G-code / STL / SVG inspectors, fit checker, deck drawing | 4 suites |
 | **Design-file claims** | Facts in `HARDWARE_SPECS.md` checked against the real `.hvs` / `.stl` files: rails identical, jaws the same shape, clamps different, plate sockets match their STLs, rail slot pitch follows the fret rule, bed overrun flagged, each file's SHA recorded in the docs. Needs the files (not committed): set `AGAP_PARTS_DIR`. Without them the suite reports **SKIP**, not PASS | 20 tests (CI skips them) |
@@ -69,6 +70,8 @@ Every one is guarded by a test that fails without the fix (checked by putting th
 | 19 | Typed **Bb**, the real firmware answers **A#**. The page compared the two names as text, so the pressed key and the lit setlist chip would never light for flats | End-to-end test with the real firmware | Silent loss of the highlight for every flat chord | `sameChord` compares roots by pitch and keeps the quality exact (so `CM7` and `Cm7` stay different) |
 | 20 | Starting the bridge on a busy port (8080 is not free on this PC) crashed with a raw traceback | Trying `agap.py demo` for real | A first-time user is stuck with no advice | Plain message with `--http-port N` advice; the launcher passes the option through |
 | 21 | The bridge's token line did not appear when its output was captured (Python buffers piped output) | The same try-out, with output redirected | A launcher or app that captures output never shows the token | Line-buffered output in the bridge and launcher; test starts the bridge piped and waits for the token |
+| 22 | The bridge and the page accepted sequences of 13-16 chords, but the real firmware refuses anything over 12 (`ERR too many chords`); the bridge would then report "busy" for a sequence that never played | Driving the real firmware (found while planning the C++ tool) | A progression silently not playing | Per-mode limit (12 fretboard, 16 helper) reported in `/api/status` and used by the page; a test ties it to `MAX_PROG` in the sketch; end-to-end test with 12 and 13 |
+| 23 | The C++ tool turned a non-number into 0 (`atoi`): `--bpm abc` sent `TEMPO 0` and divided by zero for its wait time. It also spoke only the earlier helper protocol | Code review while updating the tool | A wrong or undefined command on a real board | Strict whole-number parsing with the firmware's ranges, in both modes; 212 unit checks and 15 end-to-end tests |
 
 ## Phase 1b: the phone page ("AGAP Stage")
 
@@ -125,9 +128,19 @@ simulated coil pins.
 | The page's parser reads the real fingerings of 84 chords and agrees with ChordAI on frets and cost | Pass |
 | For 9 chords, **the number and the channels of coils that switch on equal what the page would draw** | Pass |
 | A freshly booted board reads as "nothing played yet" | Pass (bug 18) |
+| 12-chord sequences play; 13 are refused by the bridge before the firmware sees them | Pass (bug 22) |
 | A locked bridge refuses chord / strum / sequence and the coils stay off | Pass |
 | If the firmware dies, the bridge marks itself disconnected and refuses commands (503) | Pass |
 | Across all of the above, the firmware's own safety checks (never more than 6 coils, kick subset of on, no channel beyond 29) were never violated | Pass |
+
+**The C++ control tool on the same real firmware** (`python -m unittest test_control_e2e` in `tools/tests`):
+the compiled tool runs in `--stdio` mode (commands on stdout, board lines on stdin) wired to `sim_serve`.
+It sends the exact lines (`CHORD Bm`, `PRESS 6 1`, `TEMPO 200` + `SEQUENCE C G`), prints and draws
+`Bm -> x 2 0 4 0 2  (cost 9)` with one `@` per coil, and the pins that follow are the right channels. It
+refuses 16 kinds of bad command with exit code 2 and sends nothing to the board, refuses a typo before the
+2-second reset, returns 1 when the board answers `ERR`, warns about the heat of `calib`, and warns when
+`--helper` is used on the fretboard firmware. Its limits are tied to the sketch's own constants and
+CALIB usage text, and it compiles with `-Wall -Wextra -Werror`.
 
 **Mutation-checked on the firmware itself:** raising `MAX_COILS` to 7 fails 2 of these tests; making
 the 8 s coil timeout effectively infinite fails the timeout test. (Both edits were reverted.)

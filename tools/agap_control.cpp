@@ -1,48 +1,114 @@
-// AGAP control tool - C++ version of tools/agap_control.py (Windows).
+// AGAP control tool - the C++ command-line tool for the robot.
 //
-// Same commands and same serial protocol as the Python tool, so the whole
-// stack (firmware + PC-side control) can be C++ with no Python installed.
-// Opens a COM port with the Win32 API, sends one text command per line to
-// AGAP_HelperButton.ino, and prints what the board replies.
+// Talks to the FINAL 30-solenoid firmware (AGAP_Fretboard.ino) by default: chord names, drawn
+// fingerings, strum, press/release, sequence, calib. `--helper` talks to the earlier chord-helper
+// firmware instead (AGAP_HelperButton.ino, button_map.json), as before.
 //
-// Build (MinGW g++ or any C++14 compiler on Windows):
-//   g++ -std=c++14 -O2 agap_control.cpp -o agap_control.exe
+// Build (any C++14 compiler):
+//   g++ -std=c++14 -O2 agap_control.cpp -o agap_control          (Linux, macOS, Raspberry Pi)
+//   g++ -std=c++14 -O2 agap_control.cpp -o agap_control.exe      (Windows, MinGW)
 //
-// This file is the thin hardware-touching layer (COM port I/O + argument
-// parsing). Everything testable - button_map.json parsing, label/chord
-// resolution, command-string building - is in agap_control_logic.h and is
-// covered by tools/tests/. Like the Python tool, this only sends commands
-// and shows replies: it cannot tell whether a button physically pressed or
-// a chord sounded right (README_AGAP.md steps 3 and 5 - that's you,
-// listening and watching).
+// Transports: a serial port (Win32 API on Windows, termios elsewhere), or --stdio, which writes
+// commands to stdout and reads the board's lines from stdin so the tool can be tested against the real
+// firmware logic running on a PC (bridge/test_agap_control_e2e.py). In --stdio mode everything meant for
+// a person goes to stderr.
+//
+// The hardware-touching layer is this file (port I/O). Everything else is unit-tested natively:
+// agap_control_fret.h (fretboard commands, limits, fingering reading and drawing) and
+// agap_control_logic.h (button_map.json and the helper protocol). Like every other tool here, this only
+// sends commands and shows replies: it cannot tell whether a coil really pressed or a chord sounded
+// right, and the serial transports have not been tried on a real board.
 
-#ifndef _WIN32
-#error "agap_control.cpp uses the Win32 serial API and builds on Windows only."
-#endif
-
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <fcntl.h>
+#include <glob.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <termios.h>
+#include <unistd.h>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
 
+#include "agap_control_fret.h"
 #include "agap_control_logic.h"
 
 using namespace agapctl;
 
 static const char* kDefaultMapPath = "../AGAP_HelperButton/button_map.json";
-static const DWORD kBaud = 115200;
+static const unsigned kBoot = 2000;   // the Mega resets when a serial port is opened; wait out its boot
 
-// ----------------------------- serial port -----------------------------
+static FILE* g_human = stdout;        // where text meant for a person goes (stderr in --stdio mode)
 
-class SerialPort {
+static void say(const std::string& s) {
+  std::fputs(s.c_str(), g_human);
+  std::fputc(10, g_human);
+  std::fflush(g_human);
+}
+
+static void warn(const std::string& s) {
+  std::fputs(s.c_str(), stderr);
+  std::fputc(10, stderr);
+  std::fflush(stderr);
+}
+
+static unsigned long nowMs() {
+#ifdef _WIN32
+  return (unsigned long)GetTickCount();
+#else
+  timeval tv;
+  gettimeofday(&tv, NULL);
+  return (unsigned long)tv.tv_sec * 1000UL + (unsigned long)tv.tv_usec / 1000UL;
+#endif
+}
+
+static void sleepMs(unsigned ms) {
+#ifdef _WIN32
+  Sleep(ms);
+#else
+  usleep(ms * 1000u);
+#endif
+}
+
+// ------------------------------- transports -------------------------------
+
+class Transport {
+ public:
+  virtual ~Transport() {}
+  virtual bool writeLine(const std::string& line) = 0;
+  // Everything that arrives within timeoutMs, as whole lines (a trailing partial line is kept).
+  std::vector<std::string> readLines(unsigned timeoutMs) {
+    pump(timeoutMs);
+    std::vector<std::string> lines;
+    size_t pos;
+    while ((pos = pending_.find((char)10)) != std::string::npos) {
+      std::string line = pending_.substr(0, pos);
+      pending_.erase(0, pos + 1);
+      while (!line.empty() && (line.back() == (char)13 || line.back() == ' ')) line.pop_back();
+      if (!line.empty()) lines.push_back(line);
+    }
+    return lines;
+  }
+
+ protected:
+  virtual void pump(unsigned timeoutMs) = 0;   // append whatever arrives to pending_
+  std::string pending_;
+};
+
+#ifdef _WIN32
+class SerialPort : public Transport {
  public:
   ~SerialPort() { close(); }
 
   bool open(const std::string& name, DWORD baud) {
-    // The \\.\ prefix is required for COM10 and up and harmless below that.
-    std::string path = "\\\\.\\" + name;
+    // The prefix backslash backslash dot backslash is required for COM10 and up and harmless below that.
+    const char bs = 92;
+    std::string path = std::string(2, bs) + "." + std::string(1, bs) + name;
     h_ = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (h_ == INVALID_HANDLE_VALUE) return false;
 
@@ -73,16 +139,14 @@ class SerialPort {
     h_ = INVALID_HANDLE_VALUE;
   }
 
-  bool writeLine(const std::string& line) {
-    std::string out = line + "\n";
+  bool writeLine(const std::string& line) override {
+    std::string out = line + (char)10;
     DWORD written = 0;
     return WriteFile(h_, out.data(), (DWORD)out.size(), &written, NULL) && written == out.size();
   }
 
-  // Reads whatever arrives within timeoutMs and returns complete lines
-  // (any trailing partial line is kept for the next call).
-  std::vector<std::string> readLines(DWORD timeoutMs) {
-    std::vector<std::string> lines;
+ protected:
+  void pump(unsigned timeoutMs) override {
     DWORD start = GetTickCount();
     char buf[256];
     do {
@@ -90,15 +154,6 @@ class SerialPort {
       if (!ReadFile(h_, buf, sizeof(buf), &n, NULL)) break;
       pending_.append(buf, n);
     } while (GetTickCount() - start < timeoutMs);
-
-    size_t pos;
-    while ((pos = pending_.find('\n')) != std::string::npos) {
-      std::string line = pending_.substr(0, pos);
-      pending_.erase(0, pos + 1);
-      while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
-      if (!line.empty()) lines.push_back(line);
-    }
-    return lines;
   }
 
  private:
@@ -106,62 +161,176 @@ class SerialPort {
     close();
     return false;
   }
-
   HANDLE h_ = INVALID_HANDLE_VALUE;
-  std::string pending_;
+};
+#else
+class SerialPort : public Transport {
+ public:
+  ~SerialPort() { close(); }
+
+  bool open(const std::string& name, unsigned /*baud: 115200 is fixed below*/) {
+    fd_ = ::open(name.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (fd_ < 0) return false;
+    termios tio;
+    if (tcgetattr(fd_, &tio) != 0) return fail();
+    cfmakeraw(&tio);
+    cfsetispeed(&tio, B115200);
+    cfsetospeed(&tio, B115200);
+    tio.c_cflag |= (CLOCAL | CREAD);
+    tio.c_cflag &= ~(PARENB | CSTOPB | CSIZE);
+    tio.c_cflag |= CS8;
+    if (tcsetattr(fd_, TCSANOW, &tio) != 0) return fail();
+    tcflush(fd_, TCIOFLUSH);
+    return true;
+  }
+
+  void close() {
+    if (fd_ >= 0) ::close(fd_);
+    fd_ = -1;
+  }
+
+  bool writeLine(const std::string& line) override {
+    std::string out = line + (char)10;
+    size_t off = 0;
+    while (off < out.size()) {
+      ssize_t n = ::write(fd_, out.data() + off, out.size() - off);
+      if (n < 0) { sleepMs(5); continue; }
+      off += (size_t)n;
+    }
+    return true;
+  }
+
+ protected:
+  void pump(unsigned timeoutMs) override {
+    fd_set set;
+    FD_ZERO(&set);
+    FD_SET(fd_, &set);
+    timeval tv;
+    tv.tv_sec = (long)(timeoutMs / 1000);
+    tv.tv_usec = (long)(timeoutMs % 1000) * 1000;
+    // wait for the first bytes, then take whatever else has already arrived
+    if (select(fd_ + 1, &set, NULL, NULL, &tv) <= 0) return;
+    char buf[256];
+    for (;;) {
+      ssize_t n = ::read(fd_, buf, sizeof buf);
+      if (n <= 0) break;
+      pending_.append(buf, (size_t)n);
+      sleepMs(2);
+    }
+  }
+
+ private:
+  bool fail() {
+    close();
+    return false;
+  }
+  int fd_ = -1;
+};
+#endif
+
+// No port: commands go to stdout, the board's lines come from stdin.
+class StdioTransport : public Transport {
+ public:
+  bool writeLine(const std::string& line) override {
+    std::fputs(line.c_str(), stdout);
+    std::fputc(10, stdout);
+    std::fflush(stdout);
+    return true;
+  }
+
+ protected:
+  void pump(unsigned timeoutMs) override {
+    unsigned long start = nowMs();
+    do {
+      if (!readAvailable()) { sleepMs(timeoutMs > 40 ? 40 : timeoutMs); return; }   // end of input
+      sleepMs(4);
+    } while (nowMs() - start < timeoutMs);
+  }
+
+ private:
+  // Reads what is waiting without blocking. Returns false at end of input.
+  bool readAvailable() {
+#ifdef _WIN32
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD avail = 0;
+    if (!PeekNamedPipe(h, NULL, 0, NULL, &avail, NULL)) return false;
+    while (avail) {
+      char buf[512];
+      DWORD got = 0;
+      if (!ReadFile(h, buf, avail < sizeof buf ? avail : (DWORD)sizeof buf, &got, NULL) || !got) return false;
+      pending_.append(buf, got);
+      avail -= got;
+    }
+    return true;
+#else
+    if (!set_) { fcntl(0, F_SETFL, fcntl(0, F_GETFL) | O_NONBLOCK); set_ = true; }
+    char buf[512];
+    for (;;) {
+      ssize_t n = ::read(0, buf, sizeof buf);
+      if (n > 0) { pending_.append(buf, (size_t)n); continue; }
+      if (n == 0) return false;
+      return true;   // nothing waiting right now
+    }
+#endif
+  }
+  bool set_ = false;
 };
 
 // ------------------------------- helpers -------------------------------
 
-static void printLines(const std::vector<std::string>& lines) {
-  for (const auto& l : lines) std::printf("%s\n", l.c_str());
-}
+static bool g_sawError = false;   // the board answered ERR to something: the exit code says so
 
-// Send a command, then collect replies for waitMs.
-static void sendAndPrint(SerialPort& port, const std::string& cmd, DWORD waitMs = 300) {
-  if (!port.writeLine(cmd)) {
-    std::fprintf(stderr, "ERR could not write to the serial port\n");
-    std::exit(1);
-  }
-  printLines(port.readLines(waitMs));
-}
-
-// For commands that run for a known time (SEQUENCE, CALIB): keep printing
-// the board's output until totalMs has passed or it reports ABORTED/ERR.
-static void streamFor(SerialPort& port, DWORD totalMs) {
-  DWORD start = GetTickCount();
-  while (GetTickCount() - start < totalMs) {
-    for (const auto& l : port.readLines(100)) {
-      std::printf("%s\n", l.c_str());
-      if (l.rfind("ABORTED", 0) == 0 || l.rfind("ERR", 0) == 0) return;
+static void showLine(const std::string& l, bool diagram) {
+  say(l);
+  if (l.compare(0, 3, "ERR") == 0) g_sawError = true;
+  if (diagram) {
+    fret::Fingering f;
+    if (fret::parseFingering(l, f)) {
+      std::string d = fret::renderDiagram(f);
+      while (!d.empty() && d.back() == (char)10) d.pop_back();
+      say(d);
     }
   }
 }
 
-static std::string requireLabel(const std::string& token, const std::vector<ButtonEntry>& map) {
-  std::string label = resolveLabel(token, map);
-  if (label.empty()) {
-    std::string known;
-    for (const auto& e : map) known += (known.empty() ? "" : ", ") + e.label;
-    std::fprintf(stderr, "Unknown chord/label '%s'. Known labels: %s\n", token.c_str(), known.c_str());
-    std::exit(1);
-  }
-  return label;
+static void printLines(const std::vector<std::string>& lines, bool diagram = false) {
+  for (const auto& l : lines) showLine(l, diagram);
 }
 
-static void warnIfUnconfirmed(const std::string& label, const std::vector<ButtonEntry>& map) {
-  if (!isConfirmed(label, map)) {
-    std::fprintf(stderr,
-                 "  NOTE: '%s' is not marked confirmed in button_map.json - its chord/function "
-                 "hasn't been verified against the real device (README_AGAP.md step 1/3).\n",
-                 label.c_str());
+static bool sendLine(Transport& port, const std::string& cmd) {
+  if (!port.writeLine(cmd)) {
+    warn("ERR could not write to the serial port");
+    return false;
+  }
+  return true;
+}
+
+// Send a command, then collect replies for waitMs.
+static bool sendAndPrint(Transport& port, const std::string& cmd, unsigned waitMs, bool diagram = false) {
+  if (!sendLine(port, cmd)) return false;
+  printLines(port.readLines(waitMs), diagram);
+  return true;
+}
+
+// For commands that run for a known time (SEQUENCE, CALIB): keep printing the board's output until
+// totalMs has passed or it reports ABORTED / ERR.
+static void streamFor(Transport& port, unsigned totalMs) {
+  unsigned long start = nowMs();
+  while (nowMs() - start < totalMs) {
+    for (const auto& l : port.readLines(100)) {
+      showLine(l, false);
+      if (l.compare(0, 7, "ABORTED") == 0 || l.compare(0, 3, "ERR") == 0) return;
+    }
   }
 }
 
 static void listPorts() {
+#ifdef _WIN32
   HKEY key;
-  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DEVICEMAP\\SERIALCOMM", 0, KEY_READ, &key) != ERROR_SUCCESS) {
-    std::printf("(no serial ports found)\n");
+  const char bs = 92;
+  std::string sub = std::string("HARDWARE") + bs + "DEVICEMAP" + bs + "SERIALCOMM";
+  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, sub.c_str(), 0, KEY_READ, &key) != ERROR_SUCCESS) {
+    say("(no serial ports found)");
     return;
   }
   char name[256], data[256];
@@ -170,18 +339,31 @@ static void listPorts() {
     DWORD nameLen = sizeof(name), dataLen = sizeof(data), type = 0;
     if (RegEnumValueA(key, i, name, &nameLen, NULL, &type, (LPBYTE)data, &dataLen) != ERROR_SUCCESS) break;
     if (type == REG_SZ) {
-      std::printf("%s\n", data);
+      say(data);
       any = true;
     }
   }
   RegCloseKey(key);
-  if (!any) std::printf("(no serial ports found)\n");
+  if (!any) say("(no serial ports found)");
+#else
+  bool any = false;
+  const char* patterns[] = {"/dev/ttyACM*", "/dev/ttyUSB*", "/dev/tty.usb*", "/dev/cu.usb*"};
+  for (const char* pat : patterns) {
+    glob_t g;
+    if (glob(pat, 0, NULL, &g) == 0) {
+      for (size_t i = 0; i < g.gl_pathc; i++) { say(g.gl_pathv[i]); any = true; }
+    }
+    globfree(&g);
+  }
+  if (!any) say("(no serial ports found)");
+#endif
 }
 
-static void usage() {
-  std::printf(
-      "AGAP control tool (C++)\n\n"
-      "usage: agap_control [--port COMx] [--map button_map.json] <command> [args]\n\n"
+// ------------------------------ the earlier helper firmware ------------------------------
+
+static void helperUsage() {
+  say("AGAP control tool (C++), earlier chord-helper firmware (--helper)\n\n"
+      "usage: agap_control --helper [--port PORT | --stdio] [--map button_map.json] <command> [args]\n\n"
       "commands:\n"
       "  ports                      list serial ports (no --port needed)\n"
       "  labels | status | stop     query the board / release every channel\n"
@@ -190,19 +372,111 @@ static void usage() {
       "  chord <label|chord>        press + strum\n"
       "  sequence <t1> <t2> ... [--bpm N]\n"
       "  calib <label|chord> [--hold-ms N] [--reps N] [--gap-ms N]\n"
-      "  raw <firmware command words...>\n");
+      "  raw <firmware command words...>");
 }
 
-// Pulls "--name value" out of args (removing both) and returns value, or def.
-static int takeIntOption(std::vector<std::string>& args, const std::string& name, int def) {
-  for (size_t i = 0; i + 1 < args.size(); i++) {
-    if (args[i] == name) {
-      int v = std::atoi(args[i + 1].c_str());
-      args.erase(args.begin() + i, args.begin() + i + 2);
-      return v;
+static bool requireLabel(const std::string& token, const std::vector<ButtonEntry>& map, std::string& label) {
+  label = resolveLabel(token, map);
+  if (!label.empty()) return true;
+  std::string known;
+  for (const auto& e : map) known += (known.empty() ? "" : ", ") + e.label;
+  warn("Unknown chord/label '" + token + "'. Known labels: " + known);
+  return false;
+}
+
+static void warnIfUnconfirmed(const std::string& label, const std::vector<ButtonEntry>& map) {
+  if (!isConfirmed(label, map)) {
+    warn("  NOTE: '" + label + "' is not marked confirmed in button_map.json - its chord/function hasn't been "
+         "verified against the real device (README_AGAP.md step 1/3).");
+  }
+}
+
+static int runHelper(Transport& port, const std::string& cmd, std::vector<std::string> args, const std::string& mapPath) {
+  std::vector<ButtonEntry> map;
+  try {
+    map = loadButtonMap(mapPath);
+  } catch (const JsonParseError& e) {
+    warn(std::string("Could not read button map: ") + e.what() + "\n(use --map to point at button_map.json)");
+    return 1;
+  }
+  std::string label, err;
+  if (cmd == "labels") {
+    sendAndPrint(port, buildLabelsCmd(), 300);
+  } else if (cmd == "status") {
+    sendAndPrint(port, buildStatusCmd(), 300);
+  } else if (cmd == "stop") {
+    sendAndPrint(port, buildStopCmd(), 300);
+  } else if (cmd == "press" && args.size() == 1) {
+    if (!requireLabel(args[0], map, label)) return 1;
+    sendAndPrint(port, buildPressCmd(label), 300);
+  } else if (cmd == "release" && args.size() == 1) {
+    std::string target;
+    if (toUpper(args[0]) == "ALL") target = "ALL";
+    else if (!requireLabel(args[0], map, target)) return 1;
+    sendAndPrint(port, buildReleaseCmd(target), 300);
+  } else if (cmd == "chord" && args.size() == 1) {
+    if (!requireLabel(args[0], map, label)) return 1;
+    warnIfUnconfirmed(label, map);
+    sendAndPrint(port, buildChordCmd(label), 600);
+  } else if (cmd == "sequence") {
+    int bpm = fret::kBpmDefault;
+    bool found = false;
+    if (!fret::detail::takeInt(args, "--bpm", fret::kBpmMin, fret::kBpmMax, bpm, found, err)) { warn(err); return 2; }
+    if (args.empty()) { helperUsage(); return 2; }
+    std::vector<std::string> labels;
+    for (const auto& t : args) {
+      if (!requireLabel(t, map, label)) return 1;
+      warnIfUnconfirmed(label, map);
+      labels.push_back(label);
+    }
+    sendAndPrint(port, buildTempoCmd(bpm), 150);
+    say("Sending: " + buildSequenceCmd(labels));
+    if (!sendLine(port, buildSequenceCmd(labels))) return 1;
+    streamFor(port, (unsigned)(60000.0 / bpm * labels.size()) + 5000);
+  } else if (cmd == "calib") {
+    int holdMs = 1000, reps = 5, gapMs = 800;
+    bool f = false;
+    if (!fret::detail::takeInt(args, "--hold-ms", 10, 7000, holdMs, f, err) ||
+        !fret::detail::takeInt(args, "--reps", 1, 100, reps, f, err) ||
+        !fret::detail::takeInt(args, "--gap-ms", 0, 10000, gapMs, f, err)) { warn(err); return 2; }
+    if (args.size() != 1) { helperUsage(); return 2; }
+    if (!requireLabel(args[0], map, label)) return 1;
+    say("Sending: " + buildCalibCmd(label, holdMs, reps, gapMs));
+    if (!sendLine(port, buildCalibCmd(label, holdMs, reps, gapMs))) return 1;
+    streamFor(port, (unsigned)(holdMs + gapMs) * (unsigned)reps + 5000);
+  } else if (cmd == "raw" && !args.empty()) {
+    std::string line;
+    for (const auto& w : args) line += (line.empty() ? "" : " ") + w;
+    sendAndPrint(port, line, 500);
+  } else {
+    helperUsage();
+    return 2;
+  }
+  return g_sawError ? 1 : 0;
+}
+
+// ------------------------------ the final fretboard firmware ------------------------------
+
+static int runFretboard(Transport& port, const std::string& cmd, const std::vector<std::string>& args) {
+  fret::Plan p = fret::plan(cmd, args);
+  if (!p.ok()) {
+    warn("ERR " + p.error);
+    warn("(run with --help for the commands)");
+    return 2;
+  }
+  for (const auto& n : p.notes) warn("NOTE: " + n);
+  const std::string up = fret::detail::upper(cmd);
+  const bool diagram = (up == "CHORD" || up == "SHOW" || up == "RAW");
+  for (const auto& s : p.steps) {
+    if (s.stream) {
+      say("Sending: " + s.line);
+      if (!sendLine(port, s.line)) return 1;
+      streamFor(port, (unsigned)s.waitMs);
+    } else if (!sendAndPrint(port, s.line, (unsigned)s.waitMs, diagram)) {
+      return 1;
     }
   }
-  return def;
+  return g_sawError ? 1 : 0;
 }
 
 // ---------------------------------- main ----------------------------------
@@ -210,6 +484,7 @@ static int takeIntOption(std::vector<std::string>& args, const std::string& name
 int main(int argc, char** argv) {
   std::vector<std::string> args(argv + 1, argv + argc);
   std::string portName, mapPath = kDefaultMapPath;
+  bool helper = false, useStdio = false;
 
   // Global options may come before the command.
   while (!args.empty() && args[0].rfind("--", 0) == 0) {
@@ -219,16 +494,26 @@ int main(int argc, char** argv) {
     } else if (args[0] == "--map" && args.size() >= 2) {
       mapPath = args[1];
       args.erase(args.begin(), args.begin() + 2);
+    } else if (args[0] == "--helper") {
+      helper = true;
+      args.erase(args.begin());
+    } else if (args[0] == "--fretboard") {
+      helper = false;
+      args.erase(args.begin());
+    } else if (args[0] == "--stdio") {
+      useStdio = true;
+      g_human = stderr;
+      args.erase(args.begin());
     } else if (args[0] == "--help") {
-      usage();
+      if (helper) helperUsage(); else say(fret::usage());
       return 0;
     } else {
-      std::fprintf(stderr, "Unknown option %s\n", args[0].c_str());
+      warn("Unknown option " + args[0]);
       return 2;
     }
   }
   if (args.empty()) {
-    usage();
+    if (helper) helperUsage(); else say(fret::usage());
     return 2;
   }
 
@@ -239,77 +524,40 @@ int main(int argc, char** argv) {
     listPorts();
     return 0;
   }
-  if (portName.empty()) {
-    std::fprintf(stderr, "--port is required (run `agap_control ports` to list them)\n");
-    return 2;
-  }
 
-  std::vector<ButtonEntry> map;
-  try {
-    map = loadButtonMap(mapPath);
-  } catch (const JsonParseError& e) {
-    std::fprintf(stderr, "Could not read button map: %s\n(use --map to point at button_map.json)\n", e.what());
-    return 1;
-  }
-
-  SerialPort port;
-  if (!port.open(portName, kBaud)) {
-    std::fprintf(stderr, "ERR could not open %s (wrong port, or another program has it open?)\n", portName.c_str());
-    return 1;
-  }
-  Sleep(2000);  // the Mega resets when the port opens; wait out its boot
-  printLines(port.readLines(200));  // boot banner
-
-  if (cmd == "labels") {
-    sendAndPrint(port, buildLabelsCmd());
-  } else if (cmd == "status") {
-    sendAndPrint(port, buildStatusCmd());
-  } else if (cmd == "stop") {
-    sendAndPrint(port, buildStopCmd());
-  } else if (cmd == "press" && args.size() == 1) {
-    sendAndPrint(port, buildPressCmd(requireLabel(args[0], map)));
-  } else if (cmd == "release" && args.size() == 1) {
-    std::string target = toUpper(args[0]) == "ALL" ? "ALL" : requireLabel(args[0], map);
-    sendAndPrint(port, buildReleaseCmd(target));
-  } else if (cmd == "chord" && args.size() == 1) {
-    std::string label = requireLabel(args[0], map);
-    warnIfUnconfirmed(label, map);
-    sendAndPrint(port, buildChordCmd(label), 600);
-  } else if (cmd == "sequence") {
-    int bpm = takeIntOption(args, "--bpm", 50);
-    if (args.empty()) {
-      usage();
+  // Check the command is well formed BEFORE opening the port: a typo should not cost a 2-second board reset.
+  if (!helper) {
+    fret::Plan check = fret::plan(cmd, args);
+    if (!check.ok()) {
+      warn("ERR " + check.error);
+      warn("(run with --help for the commands)");
       return 2;
     }
-    std::vector<std::string> labels;
-    for (const auto& t : args) {
-      std::string label = requireLabel(t, map);
-      warnIfUnconfirmed(label, map);
-      labels.push_back(label);
-    }
-    sendAndPrint(port, buildTempoCmd(bpm), 150);
-    std::printf("Sending: %s\n", buildSequenceCmd(labels).c_str());
-    port.writeLine(buildSequenceCmd(labels));
-    streamFor(port, (DWORD)(60000.0 / bpm * labels.size()) + 5000);
-  } else if (cmd == "calib") {
-    int holdMs = takeIntOption(args, "--hold-ms", 1000);
-    int reps = takeIntOption(args, "--reps", 5);
-    int gapMs = takeIntOption(args, "--gap-ms", 800);
-    if (args.size() != 1) {
-      usage();
+  }
+
+  StdioTransport stdio;
+  SerialPort serial;
+  Transport* port = &stdio;
+  if (!useStdio) {
+    if (portName.empty()) {
+      warn("--port is required (run `agap_control ports` to list them), or use --stdio");
       return 2;
     }
-    std::string label = requireLabel(args[0], map);
-    std::printf("Sending: %s\n", buildCalibCmd(label, holdMs, reps, gapMs).c_str());
-    port.writeLine(buildCalibCmd(label, holdMs, reps, gapMs));
-    streamFor(port, (DWORD)(holdMs + gapMs) * reps + 5000);
-  } else if (cmd == "raw" && !args.empty()) {
-    std::string line;
-    for (const auto& w : args) line += (line.empty() ? "" : " ") + w;
-    sendAndPrint(port, line, 500);
-  } else {
-    usage();
-    return 2;
+    if (!serial.open(portName, 115200)) {
+      warn("ERR could not open " + portName + " (wrong port, or another program has it open?)");
+      return 1;
+    }
+    sleepMs(kBoot);
+    port = &serial;
   }
-  return 0;
+
+  std::vector<std::string> banner = port->readLines(useStdio ? 400 : 200);
+  printLines(banner);
+  fret::Firmware fw = fret::detectFirmware(banner);
+  if (fw == fret::Firmware::Helper && !helper)
+    warn("NOTE: the board says it runs the earlier chord-helper firmware. Add --helper to use its commands.");
+  if (fw == fret::Firmware::Fretboard && helper)
+    warn("NOTE: the board says it runs the fretboard firmware. Drop --helper to use its commands.");
+
+  return helper ? runHelper(*port, cmd, args, mapPath) : runFretboard(*port, cmd, args);
 }

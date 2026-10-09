@@ -881,11 +881,13 @@ def selftest_plan():
         ("Central deck drawing tests", ROOT / "tools" / "tests", "test_deck_drawing"),
         ("STL inspector tests", ROOT / "tools" / "tests", "test_stl_inspect"),
         ("Design-file claims (needs the files)", ROOT / "tools" / "tests", "test_real_parts"),
+        ("Control tool vs the real firmware (end to end)", ROOT / "tools" / "tests", "test_control_e2e"),
     ]
     plan = [(n, cwd, mod, None) for n, cwd, mod in py]
     plan += [
         ("Firmware logic tests (C++)", ROOT / "AGAP_HelperButton" / "tests", None, "test_agap_logic.cpp"),
-        ("Control tool tests (C++)", ROOT / "tools" / "tests", None, "test_agap_control_logic.cpp"),
+        ("Control tool tests (C++, helper protocol)", ROOT / "tools" / "tests", None, "test_agap_control_logic.cpp"),
+        ("Control tool tests (C++, fretboard commands)", ROOT / "tools" / "tests", None, "test_agap_control_fret.cpp"),
         ("Fretboard chord search vs ChordAI (C++)", ROOT / "AGAP_Fretboard" / "tests", None, "test_agap_chords.cpp"),
         ("Fretboard channel mapping (C++)", ROOT / "AGAP_Fretboard" / "tests", None, "test_agap_fret.cpp"),
         ("Fretboard firmware simulation", ROOT / "AGAP_Fretboard" / "sim", None, "sim_fretboard.cpp"),

@@ -22,8 +22,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: G-code inspector and LH fit checker tests
-        run: python -m unittest test_hvs_inspect test_lh_fit test_deck_drawing test_stl_inspect test_real_parts -v
+      - name: G-code inspector, LH fit checker, and the C++ control tool against the real firmware logic
+        run: python -m unittest test_hvs_inspect test_lh_fit test_deck_drawing test_stl_inspect test_real_parts test_control_e2e -v
         working-directory: tools/tests
 
   fretboard-tests:

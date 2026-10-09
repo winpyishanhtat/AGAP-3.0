@@ -89,21 +89,23 @@ number of channels that can be active together.
 
 The PC-side sequencer exists in two interchangeable versions with the same
 commands and the same serial protocol. **The C++ one needs no Python**
-(Windows only; builds with MinGW g++):
+(Windows, Linux, macOS, Raspberry Pi; builds with any C++14 compiler). The C++ tool
+now talks to the **final fretboard firmware by default**, so for this earlier
+chord-helper firmware add `--helper`:
 
 ```bash
 cd ../tools
 g++ -std=c++14 -O2 agap_control.cpp -o agap_control.exe
 agap_control ports
-agap_control --port COM5 calib EM --hold-ms 1000 --reps 5
-agap_control --port COM5 sequence C G Am F --bpm 50
-agap_control --port COM5 stop
+agap_control --helper --port COM5 calib EM --hold-ms 1000 --reps 5
+agap_control --helper --port COM5 sequence C G Am F --bpm 50
+agap_control --helper --port COM5 stop
 ```
 
 Its parsing/resolution/command-building logic (`tools/agap_control_logic.h`)
-has 49 native unit tests: `tools/tests/run_tests.sh`. The COM-port I/O
-layer itself is not unit-tested and has not yet been exercised against a
-real board.
+has 49 native unit tests: `tools/tests/run_tests.sh`. The serial I/O layer
+itself is not unit-tested and has not yet been exercised against a real board.
+(For the fretboard firmware see `../AGAP_Fretboard/USER_MANUAL.md`.)
 
 Python can't run *on* the Mega (8 KB RAM, no Python port for AVR), which is
 why the firmware is C++; the Python/C++ tools both run on the PC and talk to

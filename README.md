@@ -29,6 +29,7 @@ something misbehaves, that transcript is the first thing to look at.
 `python agap.py selftest` runs every test on your computer. Wiring and the
 power-up order are in [`AGAP_Fretboard/USER_MANUAL.md`](AGAP_Fretboard/USER_MANUAL.md).
 
+- **[`tools/agap_control.cpp`](tools/agap_control.cpp) — the C++ command-line tool** (Windows, Linux, macOS, Raspberry Pi): `agap_control --port COM5 chord Bm` sends the chord and draws the fingering the board answered; strict argument checks; `--helper` for the earlier firmware. 212 unit checks + 15 end-to-end tests against the real firmware logic.
 - **[`AGAP_Fretboard/`](AGAP_Fretboard/) — final design (30 solenoids, frets 1-5).** The firmware for the printed set in [`docs/HARDWARE_SPECS.md`](docs/HARDWARE_SPECS.md): on-board chord search (a C++ port of ChordAI, checked against the Python on every chord), 30 driver channels on four ports, a six-coil limit, six-servo AutoStrummer, saved tuning. Compiles for the Mega and passes its tests in CI; **not yet run on a board**.
 - **[`AGAP_HelperButton/`](AGAP_HelperButton/) — earlier design, kept for reference.** 10 solenoids press the buttons of a purchased chord helper. The part list for the final design no longer includes the helper.
 - **[`AGAP_Mega/`](AGAP_Mega/) — first design, kept for reference.** 18 solenoids on frets 1-3 with an on-board chord search; the final design extends this idea to 5 frets.

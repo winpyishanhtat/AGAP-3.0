@@ -149,6 +149,20 @@ class TestServedFiles(unittest.TestCase):
         self.assertEqual(get(self.base + "/api/status", TOKEN)[0], 200)
 
 
+class TestLimitsMatchTheFirmwareSource(unittest.TestCase):
+    def test_bridge_sequence_limit_equals_the_sketchs_own_array_size(self):
+        src = (ab.HERE.parent / "AGAP_Fretboard" / "AGAP_Fretboard.ino").read_text(encoding="utf-8")
+        m = re.search(r"const uint8_t MAX_PROG = (\d+);", src)
+        self.assertIsNotNone(m, "MAX_PROG not found in the sketch")
+        self.assertEqual(ab.MAX_SEQUENCE_FRETBOARD, int(m.group(1)))
+
+    @need_node
+    def test_page_uses_the_limit_the_bridge_reports(self):
+        got = node("console.log(JSON.stringify([U.sequenceLimit({max_sequence: d[0]}), U.sequenceLimit({max_sequence: d[1]})]))",
+                   [ab.MAX_SEQUENCE_FRETBOARD, ab.MAX_SEQUENCE])
+        self.assertEqual(got, [ab.MAX_SEQUENCE_FRETBOARD, ab.MAX_SEQUENCE])
+
+
 class TestPageSource(unittest.TestCase):
     def read(self, name):
         return (ab.HERE / name).read_text(encoding="utf-8")

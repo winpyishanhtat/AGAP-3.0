@@ -199,7 +199,7 @@
     return b;
   }
 
-  function currentProgression() { return U.parseProgression($("seq").value); }
+  function currentProgression() { return U.parseProgression($("seq").value, U.sequenceLimit(S.status)); }
 
   function renderChips() {
     var chips = $("chips");

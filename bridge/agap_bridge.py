@@ -53,6 +53,9 @@ BAUD = 115200
 
 MAX_BODY = 2048
 MAX_SEQUENCE = 16
+# AGAP_Fretboard.ino keeps a sequence in a 12-step array (MAX_PROG) and answers "ERR too many chords" beyond it.
+# The earlier helper build streams its sequence and has no such array.
+MAX_SEQUENCE_FRETBOARD = 12
 BPM_RANGE = (20, 200)
 MIN_COMMAND_GAP_S = 0.15
 CALIB_MAX_HOLD_MS = 2000
@@ -334,8 +337,8 @@ class Bridge:
         if action == "sequence":
             self._need_untested_ok()
             targets = p.get("targets")
-            if not isinstance(targets, list) or not 1 <= len(targets) <= MAX_SEQUENCE:
-                raise CommandError(400, "targets must be a list of 1 to %d chords" % MAX_SEQUENCE)
+            if not isinstance(targets, list) or not 1 <= len(targets) <= MAX_SEQUENCE_FRETBOARD:
+                raise CommandError(400, "targets must be a list of 1 to %d chords" % MAX_SEQUENCE_FRETBOARD)
             bpm = self._int(p, "bpm", 50, *BPM_RANGE)
             names = [self._chord_name(t) for t in targets]
             return ["TEMPO %d" % bpm, "SEQUENCE " + " ".join(names)], len(names) * 60.0 / bpm + 2.0
@@ -405,6 +408,7 @@ class Bridge:
             "allow_calib": self.cfg.allow_calib,
             "allow_unconfirmed": self.cfg.allow_unconfirmed,
             "fretboard": self.cfg.fretboard,
+            "max_sequence": MAX_SEQUENCE_FRETBOARD if self.cfg.fretboard else MAX_SEQUENCE,
             "buttons": [{"label": b["label"], "chord": b["chord"], "confirmed": b["confirmed"]} for b in self.buttons],
         }
 
