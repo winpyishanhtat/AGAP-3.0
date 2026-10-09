@@ -830,6 +830,7 @@ def selftest_plan():
         ("LH base fit checker tests", ROOT / "tools" / "tests", "test_lh_fit"),
         ("Central deck drawing tests", ROOT / "tools" / "tests", "test_deck_drawing"),
         ("STL inspector tests", ROOT / "tools" / "tests", "test_stl_inspect"),
+        ("Design-file claims (needs the files)", ROOT / "tools" / "tests", "test_real_parts"),
     ]
     plan = [(n, cwd, mod, None) for n, cwd, mod in py]
     plan += [
@@ -877,6 +878,13 @@ def run_sim(cwd, source, gpp, run):
         return not failed, summary, "\n".join(log)
 
 
+def all_skipped(output):
+    """True when a unittest run did nothing but skip (e.g. the design files are not on this computer)."""
+    m = re.search(r"Ran (\d+) tests?", output)
+    k = re.search(r"^OK \(skipped=(\d+)\)", output, re.M)
+    return bool(m and k and m.group(1) == k.group(1))
+
+
 def run_suite(name, cwd, module, cpp_src, gpp):
     """Returns (passed, last line, full output). Calls g++ directly: on Windows
     `bash` on PATH is often the WSL stub, which fails without a Linux install."""
@@ -884,6 +892,8 @@ def run_suite(name, cwd, module, cpp_src, gpp):
     if module:
         r = run([sys.executable, "-m", "unittest", module])
         out = r.stdout
+        if r.returncode == 0 and all_skipped(out):
+            return None, "skipped (design files not found; set AGAP_PARTS_DIR)", out
     elif cpp_src.startswith("sim_"):
         return run_sim(cwd, cpp_src, gpp, run)
     else:

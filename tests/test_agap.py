@@ -579,6 +579,20 @@ class TestFlashAndRepo(unittest.TestCase):
             if cpp_src:
                 self.assertTrue((Path(cwd) / cpp_src).is_file(), name)
 
+    def test_a_suite_where_every_test_skipped_is_not_reported_as_a_pass(self):
+        nl = chr(10)
+        skipped = "Ran 14 tests in 0.000s" + nl + nl + "OK (skipped=14)" + nl
+        self.assertTrue(agap.all_skipped(skipped))
+
+    def test_a_suite_with_some_skips_but_real_passes_is_a_pass(self):
+        nl = chr(10)
+        self.assertFalse(agap.all_skipped("Ran 14 tests in 1.0s" + nl + nl + "OK (skipped=3)" + nl))
+        self.assertFalse(agap.all_skipped("Ran 14 tests in 1.0s" + nl + nl + "OK" + nl))
+        self.assertFalse(agap.all_skipped("Ran 3 tests in 1.0s" + nl + nl + "FAILED (failures=1, skipped=3)" + nl))
+
+    def test_design_file_suite_is_in_the_plan(self):
+        self.assertIn("test_real_parts", [m for _, _, m, _ in agap.selftest_plan()])
+
     def test_selftest_does_not_use_bash(self):
         # `bash` on Windows is often the WSL stub and fails without a distro.
         cmd = agap.cpp_compile_command("g++", "x.cpp", "t.exe")

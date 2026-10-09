@@ -84,3 +84,31 @@ class TestStl(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSameness(unittest.TestCase):
+    def path(self, tris, name):
+        p = Path(tempfile.mkdtemp()) / name
+        write_stl(p, tris)
+        return p
+
+    def test_a_file_and_its_copy_are_byte_identical(self):
+        a = self.path(box_tris(0, 0, 0, 10, 20, 5), "a.stl")
+        b = self.path(box_tris(0, 0, 0, 10, 20, 5), "b.stl")
+        self.assertEqual(si.compare(a, b), "identical")
+
+    def test_same_box_triangulated_differently_is_the_same_shape(self):
+        t = box_tris(0, 0, 0, 10, 20, 5)
+        flipped = [(tri[1], tri[2], tri[0]) for tri in t]   # same triangles, other starting corner
+        a, b = self.path(t, "a.stl"), self.path(flipped[::-1], "b.stl")
+        self.assertEqual(si.compare(a, b), "same shape")
+
+    def test_different_size_is_different(self):
+        a = self.path(box_tris(0, 0, 0, 10, 20, 5), "a.stl")
+        b = self.path(box_tris(0, 0, 0, 10, 20, 6), "b.stl")
+        self.assertEqual(si.compare(a, b), "different")
+
+    def test_same_outer_box_but_hole_moved_is_different(self):
+        a = self.path(drilled_tris(0, 0, 40, 10, 5, 3, 9, 7, 0, 6), "a.stl")
+        b = self.path(drilled_tris(0, 0, 40, 10, 25, 3, 29, 7, 0, 6), "b.stl")
+        self.assertEqual(si.compare(a, b), "different")

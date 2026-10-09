@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: G-code inspector and LH fit checker tests
-        run: python -m unittest test_hvs_inspect test_lh_fit test_deck_drawing test_stl_inspect -v
+        run: python -m unittest test_hvs_inspect test_lh_fit test_deck_drawing test_stl_inspect test_real_parts -v
         working-directory: tools/tests
 
   fretboard-tests:

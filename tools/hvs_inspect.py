@@ -133,6 +133,75 @@ def format_census(rows):
     return "\n".join(lines)
 
 
+def settings(path):
+    """The slicer settings CubiEngine2 writes as ';key=value' lines (mostly at the end of the file)."""
+    out = {}
+    for line in Path(path).read_text(errors="replace").splitlines():
+        if line.startswith(";") and "=" in line and not line.startswith((";TYPE", ";LAYER")):
+            key, value = line[1:].split("=", 1)
+            out[key.strip()] = value.strip()
+    return out
+
+
+def print_seconds(path):
+    """The slicer's own running total at the last layer, or None if the file has none."""
+    last = None
+    for line in Path(path).read_text(errors="replace").splitlines():
+        if line.startswith(";TIME_ELAPSED:"):
+            last = float(line.split(":", 1)[1])
+    return last
+
+
+def extent(path):
+    """(x_min, x_max, y_min, y_max) over every G0/G1 move, which is what the printer will actually travel to."""
+    xs, ys = [], []
+    for line in Path(path).read_text(errors="replace").splitlines():
+        if line.startswith(("G0 ", "G1 ")):
+            for axis, bucket in (("X", xs), ("Y", ys)):
+                m = re.search(axis + r"(-?[\d.]+)", line)
+                if m:
+                    bucket.append(float(m.group(1)))
+    if not xs or not ys:
+        raise ValueError("no moves found")
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def bed_warnings(path):
+    """Moves outside the machine size the file itself declares (machine_width / machine_depth)."""
+    cfg = settings(path)
+    x0, x1, y0, y1 = extent(path)
+    out = []
+    for axis, lo, hi, key in (("X", x0, x1, "machine_width"), ("Y", y0, y1, "machine_depth")):
+        if key not in cfg:
+            continue
+        size = float(cfg[key])
+        if hi > size or lo < 0:
+            out.append("moves reach %s = %.1f mm (lowest %.1f) but the slicer profile is %g mm wide in %s"
+                       % (axis, hi, lo, size, axis))
+    return out
+
+
+def format_facts(path):
+    cfg = settings(path)
+    secs = print_seconds(path)
+    x0, x1, y0, y1 = extent(path)
+    lines = []
+    if secs is not None:
+        lines.append("  print time about %.1f h (slicer total)" % (secs / 3600.0))
+    lines.append("  layer height %s mm, nozzle %s C, bed %s C, infill %s %%" % (
+        cfg.get("layer_height", "?"), cfg.get("material_print_temperature", "?"),
+        cfg.get("material_bed_temperature", "?"), cfg.get("infill_sparse_density", "?")))
+    printed = sum(1 for ln in Path(path).read_text(errors="replace").splitlines() if ln.startswith(";TYPE:SUPPORT"))
+    if cfg.get("support_enable") == "True":
+        lines.append("  supports enabled in the profile, %d printed; adhesion %s" % (printed, cfg.get("adhesion_type", "?")))
+    else:
+        lines.append("  supports off; adhesion %s" % cfg.get("adhesion_type", "?"))
+    lines.append("  moves span X %.1f..%.1f, Y %.1f..%.1f mm" % (x0, x1, y0, y1))
+    for w in bed_warnings(path):
+        lines.append("  WARNING: " + w)
+    return chr(10).join(lines)
+
+
 def sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -146,6 +215,7 @@ def main():
     ap.add_argument("file", type=Path)
     ap.add_argument("--layers", type=int, nargs="*", help="layer numbers to list closed loops for")
     ap.add_argument("--sha", action="store_true", help="also print the file's SHA-256")
+    ap.add_argument("--facts", action="store_true", help="print time, supports, temperatures and whether the moves fit the machine")
     ap.add_argument("--census", action="store_true", help="count the parts on a print bed and measure each one's height")
     a = ap.parse_args()
     r = summarize(a.file, a.layers)
@@ -159,6 +229,12 @@ def main():
         _, h, layers = parse(a.file)
         print("bed census (outline sizes are toolpath centre lines):")
         print(format_census(census(layers, h)))
+    if a.facts:
+        print("print facts:")
+        print(format_facts(a.file))
+    else:
+        for w in bed_warnings(a.file):
+            print("WARNING:", w)
     if a.sha:
         print("sha256", sha256(a.file))
 

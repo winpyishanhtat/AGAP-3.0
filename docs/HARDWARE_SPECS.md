@@ -368,6 +368,9 @@ python tools/hvs_inspect.py center.hvs --layers 5 --sha
 python tools/hvs_inspect.py "02-upper-clamp-body-end(3DP-210F_ABS).hvs" --census   # what is on a print bed
 python tools/hvs_inspect.py "04-fret-1-six-socket-plate(3DP-210F_ABS).hvs" --census --sha
 python tools/hvs_inspect.py "01-rail-left(3DP-210F_ABS).hvs" --census --sha
+python tools/hvs_inspect.py "01-rail-left(3DP-210F_ABS).hvs" --facts          # time, supports, temperatures, bed overrun warning
+python tools/stl_inspect.py 01-rail-left.stl --compare 01-rail-right.stl   # identical / same shape / different
+AGAP_PARTS_DIR=<folder with the files> python -m unittest test_real_parts   # run from tools/tests; checks this document
 grep -a -E "^;(support_enable|adhesion_type|layer_height|machine_width)=" "04-fret-1-six-socket-plate(3DP-210F_ABS).hvs"   # slicer settings are listed at the end of the file
 ```
 

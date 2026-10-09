@@ -92,15 +92,48 @@ def loop_info(loop):
             "area": abs(area), "fill": abs(area) / (w * h) if w * h else 0.0}
 
 
+def same_shape(tris_a, tris_b, tol=1e-3):
+    """Same size, same volume and the same outlines at eight heights. Two meshes of one shape can
+    differ in how they are cut into triangles, so the files can differ without the part differing."""
+    if len(tris_a) == 0 or len(tris_b) == 0:
+        return False
+    ba, bb = bounds(tris_a), bounds(tris_b)
+    if any(abs(p - q) > tol for ra, rb in zip(ba, bb) for p, q in zip(ra, rb)):
+        return False
+    va, vb = volume(tris_a), volume(tris_b)
+    if abs(va - vb) > 1e-6 * max(abs(va), abs(vb), 1.0):
+        return False
+    z0, z1 = ba[2]
+    for k in range(1, 9):
+        z = z0 + (z1 - z0) * (k - 0.5) / 8.0
+        sa = sorted((round(i["w"], 2), round(i["h"], 2), round(i["cx"], 2), round(i["cy"], 2))
+                    for i in map(loop_info, slice_loops(tris_a, z)))
+        sb = sorted((round(i["w"], 2), round(i["h"], 2), round(i["cx"], 2), round(i["cy"], 2))
+                    for i in map(loop_info, slice_loops(tris_b, z)))
+        if sa != sb:
+            return False
+    return True
+
+
+def compare(path_a, path_b):
+    """'identical' (same bytes), 'same shape' (same part, different mesh) or 'different'."""
+    if Path(path_a).read_bytes() == Path(path_b).read_bytes():
+        return "identical"
+    return "same shape" if same_shape(load(path_a), load(path_b)) else "different"
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("file", type=Path)
     ap.add_argument("--slice", type=float, help="z height (mm) to list outlines at")
+    ap.add_argument("--compare", type=Path, help="another STL: say whether it is identical, the same shape, or different")
     a = ap.parse_args()
     t = load(a.file)
     (x0, x1), (y0, y1), (z0, z1) = bounds(t)
     print("%s: %d triangles, %.2f x %.2f x %.2f mm, %.2f cm3" % (a.file.name, len(t), x1 - x0, y1 - y0, z1 - z0, volume(t) / 1000))
     print("  x %.2f..%.2f  y %.2f..%.2f  z %.2f..%.2f" % (x0, x1, y0, y1, z0, z1))
+    if a.compare is not None:
+        print("  vs %s: %s" % (a.compare.name, compare(a.file, a.compare)))
     if a.slice is not None:
         infos = sorted((loop_info(l) for l in slice_loops(t, a.slice)), key=lambda i: -i["area"])
         print("  slice z=%.2f: %d closed outlines" % (a.slice, len(infos)))

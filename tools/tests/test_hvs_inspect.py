@@ -135,3 +135,67 @@ class TestCensus(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def make_footer_gcode(max_x=40.0, width=150, depth=150):
+    out = [";M902 99_footer", "M82", "; tool H0.2000 W0.4000", ";LAYER:0", ";TYPE:WALL-OUTER", "G0 X1 Y2 Z0.2"]
+    body, _ = rect(1, 2, max_x, 30, 0.0)
+    out += body[1:]
+    out += [";TIME_ELAPSED:120.5", ";TIME_ELAPSED:7200.25", ";SETTINGS_3 ",
+            ";layer_height=0.2", ";support_enable=True", ";adhesion_type=raft",
+            ";machine_width=%d" % width, ";machine_depth=%d" % depth, ";material_print_temperature=240"]
+    return "\n".join(out) + "\n"
+
+
+class TestFileFacts(unittest.TestCase):
+    def write(self, text):
+        f = tempfile.NamedTemporaryFile("w", suffix=".hvs", delete=False)
+        f.write(text)
+        f.close()
+        self.addCleanup(lambda: Path(f.name).unlink())
+        return f.name
+
+    def test_settings_are_read_from_the_end_of_the_file(self):
+        s = hv.settings(self.write(make_footer_gcode()))
+        self.assertEqual(s["support_enable"], "True")
+        self.assertEqual(s["adhesion_type"], "raft")
+        self.assertEqual(s["material_print_temperature"], "240")
+
+    def test_print_time_is_the_last_running_total(self):
+        self.assertAlmostEqual(hv.print_seconds(self.write(make_footer_gcode())), 7200.25)
+
+    def test_print_time_is_none_when_the_file_has_no_totals(self):
+        self.assertIsNone(hv.print_seconds(self.write(make_gcode())))
+
+    def test_extent_covers_every_move(self):
+        x0, x1, y0, y1 = hv.extent(self.write(make_footer_gcode(max_x=40.0)))
+        self.assertEqual((x0, x1, y0, y1), (1.0, 40.0, 2.0, 30.0))
+
+    def test_part_inside_the_machine_gives_no_warning(self):
+        self.assertEqual(hv.bed_warnings(self.write(make_footer_gcode(max_x=140.0))), [])
+
+    def test_part_past_the_machine_width_is_flagged_with_the_amount(self):
+        w = hv.bed_warnings(self.write(make_footer_gcode(max_x=155.0)))
+        self.assertEqual(len(w), 1)
+        self.assertIn("X", w[0])
+        self.assertIn("155.0", w[0])
+        self.assertIn("150", w[0])
+
+    def test_no_machine_size_in_the_file_means_no_warning(self):
+        text = make_footer_gcode(max_x=155.0).replace(";machine_width=150\n", "")
+        self.assertEqual(hv.bed_warnings(self.write(text)), [])
+
+    def test_report_lists_time_supports_and_warnings(self):
+        text = hv.format_facts(self.write(make_footer_gcode(max_x=155.0)))
+        self.assertIn("2.0 h", text)
+        self.assertIn("supports enabled in the profile, 0 printed", text)
+        self.assertIn("raft", text)
+        self.assertIn("WARNING", text)
+
+    def test_report_counts_support_sections_actually_printed(self):
+        text = make_footer_gcode().replace(";TYPE:WALL-OUTER", ";TYPE:SUPPORT" + chr(10) + ";TYPE:WALL-OUTER", 1)
+        self.assertIn("1 printed", hv.format_facts(self.write(text)))
+
+    def test_profile_with_supports_off_says_so(self):
+        text = make_footer_gcode().replace("support_enable=True", "support_enable=False")
+        self.assertIn("supports off", hv.format_facts(self.write(text)))
