@@ -41,8 +41,12 @@ tell me if that is wrong.)
 | `05-height-shim-1mm` / `-2mm` | 1 + 1 | 10 x 10 x 1 / 2 | Slotted shims (8.6 x 4.6 mm slot) for height adjustment |
 
 The left/right rails, the body-end/nut-end clamps and the body-end/nut-end jaws
-have the same size and volume as their partners. The rails and jaws are true mirror
-pairs, but the two upper clamps are **not**: their two standing walls are 44.5 mm apart
+have the same size and volume as their partners. Comparing the files: the **two rail
+STLs are byte-for-byte identical** (same SHA-256), so "left" and "right" are one part
+printed twice; the two lower jaws have the same volume and the same outline at every
+height I sliced, differing only in how the mesh is triangulated, so they are the same shape
+too (an earlier version of this document wrongly called them mirror pairs). The two upper
+clamps are **not** the same: their two standing walls are 44.5 mm apart
 on the body-end clamp (walls centred 18.8 and 63.2 mm from the left edge) and 39.0 mm
 apart on the nut-end clamp (21.5 and 60.5 mm), which probably follows the narrowing of the
 neck towards the nut. Do not swap them. All screw holes are 4.6 mm, a
@@ -117,6 +121,38 @@ What it confirms and adds:
   is meant to sit between them.
 
 SHA-256 of this file: `eedea3180fce4e7cddf9ffd1b91c01253bb7bfd4c1feba3e660891d199d159f2`.
+
+### The print bed for the rails (`01-rail-left(3DP-210F_ABS).hvs`)
+
+Also a whole bed: **two rails**, not one. Because the rail is 180 mm long and the slicer
+profile's bed is 150 mm, they lie side by side on the diagonal (about 44 degrees from the bed
+axes, 11.3 mm apart centre to centre).
+
+| On the bed | Qty | What was measured |
+|---|---|---|
+| Rail | 2 | 6.00 mm tall (40 layers of 0.15 mm), 10 x 180 mm |
+| End holes | 4 | 2 per rail, 5.0 mm toolpath (design 4.6), 6 mm in from each end |
+| Slots | 10 | 5 per rail, rounded ends, 13.0 x 5.0 mm toolpath (design 4.6 x 12.6) |
+
+- **Both rails are the same part**, which agrees with the identical STLs. One of them is simply
+  turned end for end on the bed (its slot pattern runs the other way along the print axis).
+  Hole and slot positions match the STL to 0.1 mm. Nothing in the geometry changes.
+- **The slot pitch follows the frets.** Along the rail the five slot centres are 33.4, 31.5,
+  29.7 and 28.1 mm apart. Each step is 0.944 times the one before, which is the equal-
+  temperament fret rule (2 to the power -1/12 = 0.944). If each plate is centred on its fret,
+  that pitch corresponds to a **scale length of about 630 mm** (595 mm if the first gap is
+  nut to fret 1). That is a derived figure, not a measurement of your guitar: check it against
+  the real fret positions. The rails are not symmetric end to end, so the wide-spaced end is presumably the
+  **nut end** (fret spacing shrinks towards the body), and the same rail presumably goes on
+  both sides in the same direction so the slots line up across the neck.
+- **Settings in the file:** ABS, 0.15 mm layers, 240 degrees C / 115 degrees C bed, 3 walls, 20 %
+  infill, no supports, no raft or brim. About **2.4 hours** (slicer total 8 758 s).
+- **Check the bed size before printing.** The slicer profile says 150 x 150 mm, but this
+  file's moves reach **X = 155.0 mm** (and Y = 149.8 mm), so the end of one rail lies about 5 mm
+  outside that profile. The printer is named 3DP-210F, which may mean a larger bed, but I do not
+  know the real build area. If it really is 150 mm, re-arrange the two rails in the slicer.
+
+SHA-256 of this file: `e9cc6cd112aa9fedced2363753b9506a38fbdc122331384e69907d19b896b61f`.
 
 ### The six-socket plate
 
@@ -331,6 +367,7 @@ Do not assume any of these; each needs a look at the real parts:
 python tools/hvs_inspect.py center.hvs --layers 5 --sha
 python tools/hvs_inspect.py "02-upper-clamp-body-end(3DP-210F_ABS).hvs" --census   # what is on a print bed
 python tools/hvs_inspect.py "04-fret-1-six-socket-plate(3DP-210F_ABS).hvs" --census --sha
+python tools/hvs_inspect.py "01-rail-left(3DP-210F_ABS).hvs" --census --sha
 grep -a -E "^;(support_enable|adhesion_type|layer_height|machine_width)=" "04-fret-1-six-socket-plate(3DP-210F_ABS).hvs"   # slicer settings are listed at the end of the file
 ```
 

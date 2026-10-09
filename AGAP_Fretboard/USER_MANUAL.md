@@ -30,7 +30,9 @@ a little tight; allow for it.)
 
 ## Step 2 — print and assemble the mechanics (**TBD**)
 
-Print the rails, clamps, jaws, five plates and shims. Two print files are ready: the clamp
+Print the rails, clamps, jaws, five plates and shims. Three print files are ready (the rail
+bed is named `01-rail-left` but holds **both rails**; they are the same part, and its moves
+reach X = 155 mm, so check your printer's real bed size first): the clamp
 bed holds 2 clamps, 2 jaws and 22 shims; the plate bed (named `04-fret-1...`) holds **all five
 plates**, takes about 5.5 hours in ABS at 0.2 mm, and is sliced **with supports and a raft**, so
 cut the support out from under each plate's two mounting ears and out of the ear slots. **Mark the two upper clamps: the
