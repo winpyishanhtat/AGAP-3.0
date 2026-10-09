@@ -30,7 +30,11 @@ a little tight; allow for it.)
 
 ## Step 2 — print and assemble the mechanics (**TBD**)
 
-Print the rails, clamps, jaws, five plates and shims. The files do not say how
+Print the rails, clamps, jaws, five plates and shims (the clamp print file already
+holds 2 clamps, 2 jaws and 22 shims on one bed). **Mark the two upper clamps: the
+body-end and nut-end ones are not interchangeable** (their walls are 44.5 mm and
+39.0 mm apart). The thin shims print 0.9 mm and the thick 1.95 mm, a little under
+their 1 and 2 mm names, so measure them. The files do not say how
 they join, so assemble from your own drawing. Use the shims to set the plunger's
 distance from the string. Check for yourself that each socket sits over its
 string; the sockets are 7.1 mm apart on plate 1 and 7.9 mm on plate 5.

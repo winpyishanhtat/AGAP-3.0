@@ -91,6 +91,48 @@ def summarize(path, sample_layers=None):
     return out
 
 
+def census(layers, layer_h, min_layers=3):
+    """What is on a print bed: for each distinct outline size, how many parts there are and how
+    tall each is. Parts with the same outline but different heights (1 mm and 2 mm shims) are
+    reported separately. Outlines seen in fewer than `min_layers` layers are slicer noise.
+
+    How: for each outline size, take the number of copies present in every layer. Copy number k
+    exists in the layers where that count is at least k; copies whose layer spans are identical
+    are the same kind of part.
+
+    Sizes are toolpath centre lines, so true edges are about one extrusion width (0.4 mm) further
+    out on a solid outer edge and further in on a hole. Height is whole layers x layer height,
+    so a 10 mm part at 0.15 mm layers prints 66 layers = 9.9 mm."""
+    per_size = {}
+    for n, layer in layers.items():
+        for b in layer["loops"]:
+            key = (round(b[1] - b[0], 1), round(b[3] - b[2], 1))
+            per_size.setdefault(key, {})
+            per_size[key][n] = per_size[key].get(n, 0) + 1
+    rows = []
+    for key, per in per_size.items():
+        if len(per) < min_layers:
+            continue
+        spans = {}
+        for k in range(1, max(per.values()) + 1):
+            present = [n for n, c in per.items() if c >= k]
+            span = (min(present), max(present))
+            spans[span] = spans.get(span, 0) + 1
+        for (lo, hi), count in spans.items():
+            rows.append({"size": key, "count": count, "first_layer": lo, "last_layer": hi,
+                         "height_mm": round((hi - lo + 1) * layer_h, 3)})
+    rows.sort(key=lambda r: (-r["size"][0] * r["size"][1], r["size"], -r["height_mm"]))
+    return rows
+
+
+def format_census(rows):
+    lines = []
+    for r in rows:
+        lines.append("  %d x %.1f x %.1f mm outline, %.2f mm tall (layers %d-%d)"
+                     % (r["count"], r["size"][0], r["size"][1], r["height_mm"], r["first_layer"], r["last_layer"]))
+    return "\n".join(lines)
+
+
 def sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -104,6 +146,7 @@ def main():
     ap.add_argument("file", type=Path)
     ap.add_argument("--layers", type=int, nargs="*", help="layer numbers to list closed loops for")
     ap.add_argument("--sha", action="store_true", help="also print the file's SHA-256")
+    ap.add_argument("--census", action="store_true", help="count the parts on a print bed and measure each one's height")
     a = ap.parse_args()
     r = summarize(a.file, a.layers)
     print(f"{r['name'] or a.file.name}: {r['size_mm'][0]} x {r['size_mm'][1]} x {r['size_mm'][2]} mm "
@@ -112,6 +155,10 @@ def main():
         print(f"  layer {n}: {len(loops)} closed outlines (w x d mm @ centre x,y)")
         for w, d, cx, cy in loops:
             print(f"    {w:6.1f} x {d:5.1f}   @ ({cx}, {cy})")
+    if a.census:
+        _, h, layers = parse(a.file)
+        print("bed census (outline sizes are toolpath centre lines):")
+        print(format_census(census(layers, h)))
     if a.sha:
         print("sha256", sha256(a.file))
 

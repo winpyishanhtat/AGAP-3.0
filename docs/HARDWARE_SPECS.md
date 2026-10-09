@@ -41,9 +41,37 @@ tell me if that is wrong.)
 | `05-height-shim-1mm` / `-2mm` | 1 + 1 | 10 x 10 x 1 / 2 | Slotted shims (8.6 x 4.6 mm slot) for height adjustment |
 
 The left/right rails, the body-end/nut-end clamps and the body-end/nut-end jaws
-are mirror pairs (identical size and volume). All screw holes are 4.6 mm, a
+have the same size and volume as their partners. The rails and jaws are true mirror
+pairs, but the two upper clamps are **not**: their two standing walls are 44.5 mm apart
+on the body-end clamp (walls centred 18.8 and 63.2 mm from the left edge) and 39.0 mm
+apart on the nut-end clamp (21.5 and 60.5 mm), which probably follows the narrowing of the
+neck towards the nut. Do not swap them. All screw holes are 4.6 mm, a
 clearance size for M4. "Body end" and "nut end" are the guitar's body end and
 nut end of the neck.
+
+### The print bed for the clamps (`02-upper-clamp-body-end(3DP-210F_ABS).hvs`)
+
+This `.hvs` is named after one clamp but is a whole **print bed** for the 3DP-210F, in ABS
+at 0.15 mm layers. Measured with `python tools/hvs_inspect.py <file> --census`, it holds:
+
+| On the bed | Qty | Printed height | Design height |
+|---|---|---|---|
+| Lower jaw (82 x 12) | 2 | 6.00 mm | 6 mm |
+| Upper clamp (82 x 8): base slab, then two standing walls | 2 | 4.95 + 4.95 = 9.90 mm | 10 mm |
+| Slotted shim (10 x 10, slot 8.6 x 4.6), thick | 11 | 1.95 mm | 2 mm |
+| Slotted shim, thin | 11 | **0.90 mm** | 1 mm |
+
+What it confirms and adds:
+
+- **The geometry matches the STL parts**: outlines, hole positions (5 mm from each end) and
+  both upper clamps' wall positions (including the different spacing above). So this is the
+  same design, now ready to print; it does not change any dimension.
+- **Printed heights are whole layers.** 0.15 mm layers cannot make exactly 1, 2 or 10 mm:
+  the thin shims come out 0.1 mm under (0.90 mm), the thick 0.05 mm under, the upper clamp
+  0.1 mm under. If a 1 mm shim must be exactly 1 mm, measure the printed ones.
+- **22 shims** are printed (11 of each), so there are spares for the five plates.
+
+SHA-256 of this file: `9e2f5c0139778c3dc829ac0be676fa1d1dbf7e2807a4acfb82f364f5df266d56`.
 
 ### The six-socket plate
 
@@ -254,6 +282,7 @@ Do not assume any of these; each needs a look at the real parts:
 
 ```bash
 python tools/hvs_inspect.py center.hvs --layers 5 --sha
+python tools/hvs_inspect.py "02-upper-clamp-body-end(3DP-210F_ABS).hvs" --census   # what is on a print bed
 ```
 
 SHA-256 of the files as supplied (the files are 2-7 MB each and not
