@@ -73,6 +73,51 @@ What it confirms and adds:
 
 SHA-256 of this file: `9e2f5c0139778c3dc829ac0be676fa1d1dbf7e2807a4acfb82f364f5df266d56`.
 
+### The print bed for the plates (`04-fret-1-six-socket-plate(3DP-210F_ABS).hvs`)
+
+Despite its name this is **all five plates on one bed**, not just fret 1. Measured with
+`hvs_inspect.py --census` and compared loop by loop with the five plate STLs:
+
+| On the bed | Qty | What was measured |
+|---|---|---|
+| Six-socket plate | 5 | Base slab 2.6 mm thick, sockets 12.0 mm above it, **14.6 mm** overall (STL 14.5 mm: 73 whole layers of 0.2 mm) |
+| Sockets | 30 | Inner pocket prints 7.9 x 10.9 mm toolpath (design 7.5 x 10.5), wall 9.5 x 12.5 (design 9.9 x 12.9) |
+| Floor holes | 30 | 4.8 mm (toolpath 5.2) |
+| End posts | 10 | 3 x 10 mm, rising from 2.6 to 9.6 mm |
+| Mounting ears | 10 | 15.5 x 10 mm flange on top of each post, 3 mm thick (9.6 to 12.6 mm), then a 13 x 10 mm step to about 13 mm; each has an **8.6 x 4.6 mm slot** |
+| Slots in the floor | 60 | 1.6 x 3.4 mm, twelve per plate |
+
+What it confirms and adds:
+
+- **It is the same design as the STLs.** Plates 1-4 stand upright in a column and their 24
+  socket centres agree with STL plates 1-4 to 0.01 mm. The fifth plate is printed sideways
+  (turned about 90 degrees, and about 1 degree off square) and its sockets agree with
+  STL plate 5 to about 0.25 mm, inside the +/-0.5 mm of toolpath measurements. So the bed
+  holds fret plates 1, 2, 3, 4 and 5, with the socket spacing growing from plate to plate
+  exactly as in the table below. Nothing in this file changes a dimension.
+- **What the "tabs" are.** Each end post carries a **mounting ear** that overhangs the end of
+  the plate by about 12.5 mm. Its 8.6 x 4.6 mm slot is the same slot as in the 1 mm and 2 mm
+  shims and 4.6 mm is the clearance of the M4 holes elsewhere, so the ears are very probably
+  where a bolt passes through, with a shim under the ear to set the height. That is my
+  reading of the shapes; no file says how the plate is bolted.
+- **Printing it needs supports.** The file's own settings turn supports on (everywhere, roof
+  and bottom interface), and there is a raft. Without supports the ears (10 of them, hanging
+  12.5 mm out at 9.6 mm above the bed) would sag. Remove the support from under each ear and
+  from the ear slots before assembly.
+- **Slicer settings stored in the file:** ABS, 0.2 mm layers, 240 degrees C nozzle, 115 degrees C
+  bed, 3 walls, 15 % honeycomb infill, 3 bottom / 5 top layers, machine "Cubicon Style" with a
+  150 x 150 x 150 mm build volume. The measured outlines occupy X 37 to 136 mm and Y 18 to 140
+  mm (raft and skirt not included), so the bed is nearly full. Estimated print time is about
+  **5.5 hours** (slicer's own running total, 19 800 s), and the plastic is about 38 m of 1.75 mm
+  filament, roughly 100 g at the density in the file (if the extrusion values are filament length). The clamp bed above was sliced at 0.15
+  mm layers; this one is 0.2 mm, so its heights are multiples of 0.2 mm.
+- On **plate 1**, in the row whose sockets are 14.2 mm apart, the 1.6 mm slots of neighbouring
+  sockets are only 0.4 mm apart in the design. The slicer's hole compensation closes that wall,
+  so two pairs print as two 4 mm slots instead of four 2 mm ones. Harmless unless something
+  is meant to sit between them.
+
+SHA-256 of this file: `eedea3180fce4e7cddf9ffd1b91c01253bb7bfd4c1feba3e660891d199d159f2`.
+
 ### The six-socket plate
 
 Sliced at several heights:
@@ -85,7 +130,9 @@ Sliced at several heights:
 - **Staggered in two rows**, 13 mm apart (y = 6.5 and 19.5 mm), alternating
   along the plate. That is what lets six 9.9 mm-wide sockets sit on string
   spacing of 7-8 mm.
-- **End posts and tabs** that bring the overall width to 82 mm.
+- **End posts and mounting ears** that bring the overall length to 82 mm: a 3 x 10 mm post at
+  each end of the slab, carrying a 15.5 x 10 mm ear with an 8.6 x 4.6 mm slot (see the plate
+  print bed above).
 
 The socket spacing **grows from plate to plate**, the way string spacing grows
 down a real neck. First socket to last, centre to centre:
@@ -283,6 +330,8 @@ Do not assume any of these; each needs a look at the real parts:
 ```bash
 python tools/hvs_inspect.py center.hvs --layers 5 --sha
 python tools/hvs_inspect.py "02-upper-clamp-body-end(3DP-210F_ABS).hvs" --census   # what is on a print bed
+python tools/hvs_inspect.py "04-fret-1-six-socket-plate(3DP-210F_ABS).hvs" --census --sha
+grep -a -E "^;(support_enable|adhesion_type|layer_height|machine_width)=" "04-fret-1-six-socket-plate(3DP-210F_ABS).hvs"   # slicer settings are listed at the end of the file
 ```
 
 SHA-256 of the files as supplied (the files are 2-7 MB each and not

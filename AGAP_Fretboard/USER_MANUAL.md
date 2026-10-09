@@ -30,8 +30,10 @@ a little tight; allow for it.)
 
 ## Step 2 — print and assemble the mechanics (**TBD**)
 
-Print the rails, clamps, jaws, five plates and shims (the clamp print file already
-holds 2 clamps, 2 jaws and 22 shims on one bed). **Mark the two upper clamps: the
+Print the rails, clamps, jaws, five plates and shims. Two print files are ready: the clamp
+bed holds 2 clamps, 2 jaws and 22 shims; the plate bed (named `04-fret-1...`) holds **all five
+plates**, takes about 5.5 hours in ABS at 0.2 mm, and is sliced **with supports and a raft**, so
+cut the support out from under each plate's two mounting ears and out of the ear slots. **Mark the two upper clamps: the
 body-end and nut-end ones are not interchangeable** (their walls are 44.5 mm and
 39.0 mm apart). The thin shims print 0.9 mm and the thick 1.95 mm, a little under
 their 1 and 2 mm names, so measure them. The files do not say how
