@@ -53,29 +53,37 @@ neck towards the nut. Do not swap them. All screw holes are 4.6 mm, a
 clearance size for M4. "Body end" and "nut end" are the guitar's body end and
 nut end of the neck.
 
-### The print bed for the clamps (`02-upper-clamp-body-end(3DP-210F_ABS).hvs`)
+### The print bed for the clamps (`02-upper-clamp-body-end(3DP-210F_ABS) (2).hvs`, finalized)
 
 This `.hvs` is named after one clamp but is a whole **print bed** for the 3DP-210F, in ABS
-at 0.15 mm layers. Measured with `python tools/hvs_inspect.py <file> --census`, it holds:
+at 0.15 mm layers. Measured with `python tools/hvs_inspect.py <file> --census --facts`, the
+finalized version holds just four parts:
 
 | On the bed | Qty | Printed height | Design height |
 |---|---|---|---|
 | Lower jaw (82 x 12) | 2 | 6.00 mm | 6 mm |
 | Upper clamp (82 x 8): base slab, then two standing walls | 2 | 4.95 + 4.95 = 9.90 mm | 10 mm |
-| Slotted shim (10 x 10, slot 8.6 x 4.6), thick | 11 | 1.95 mm | 2 mm |
-| Slotted shim, thin | 11 | **0.90 mm** | 1 mm |
 
 What it confirms and adds:
 
-- **The geometry matches the STL parts**: outlines, hole positions (5 mm from each end) and
-  both upper clamps' wall positions (including the different spacing above). So this is the
-  same design, now ready to print; it does not change any dimension.
-- **Printed heights are whole layers.** 0.15 mm layers cannot make exactly 1, 2 or 10 mm:
-  the thin shims come out 0.1 mm under (0.90 mm), the thick 0.05 mm under, the upper clamp
-  0.1 mm under. If a 1 mm shim must be exactly 1 mm, measure the printed ones.
-- **22 shims** are printed (11 of each), so there are spares for the five plates.
+- **The geometry matches the STL parts and the earlier version of this file.** Outlines, hole
+  positions (5 mm from each end) and both upper clamps' wall pairs (44.5 mm and 39.0 mm apart)
+  are unchanged. Nothing about the dimensions changes.
+- **It is now ready to print as it stands.** It fits inside the slicer profile (the moves span
+  X 40 to 122 mm, Y 52 to 95 mm of a 150 x 150 mm bed), uses no raft and prints no supports,
+  at 20 % infill, and takes about **2.2 hours**. The superseded version also carried 22
+  shims, which pushed it to 40 % infill, a raft, 3.9 hours, and moves out to X = 155 mm, past
+  the 150 mm profile.
+- **The shims are no longer on any bed I have been given.** The 1 mm and 2 mm height shims
+  (`05-height-shim-1mm` / `-2mm`, 10 x 10 mm with an 8.6 x 4.6 mm slot) need their own print.
+  The superseded bed printed them 0.90 mm and 1.95 mm thick (0.15 mm layers cannot make exactly
+  1 or 2 mm), so if a shim must be exactly 1 or 2 mm, measure the printed ones. How many are
+  needed is not in any file; five plates is a lower bound for one set.
+- **Printed heights are whole layers**: the upper clamp comes out 0.1 mm under 10 mm (9.90 mm).
 
-SHA-256 of this file: `9e2f5c0139778c3dc829ac0be676fa1d1dbf7e2807a4acfb82f364f5df266d56`.
+SHA-256 of the finalized file: `5b14fbf453781a54f7239fb2628af5053ed55df8dedea5f53177e4a4dc517200`.
+SHA-256 of the superseded version (`02-upper-clamp-body-end(3DP-210F_ABS).hvs`, with the
+shims; superseded): `9e2f5c0139778c3dc829ac0be676fa1d1dbf7e2807a4acfb82f364f5df266d56`.
 
 ### The print bed for the plates (`04-fret-1-six-socket-plate(3DP-210F_ABS).hvs`)
 
@@ -365,7 +373,7 @@ Do not assume any of these; each needs a look at the real parts:
 
 ```bash
 python tools/hvs_inspect.py center.hvs --layers 5 --sha
-python tools/hvs_inspect.py "02-upper-clamp-body-end(3DP-210F_ABS).hvs" --census   # what is on a print bed
+python tools/hvs_inspect.py "02-upper-clamp-body-end(3DP-210F_ABS) (2).hvs" --census --facts   # what is on a print bed
 python tools/hvs_inspect.py "04-fret-1-six-socket-plate(3DP-210F_ABS).hvs" --census --sha
 python tools/hvs_inspect.py "01-rail-left(3DP-210F_ABS).hvs" --census --sha
 python tools/hvs_inspect.py "01-rail-left(3DP-210F_ABS).hvs" --facts          # time, supports, temperatures, bed overrun warning

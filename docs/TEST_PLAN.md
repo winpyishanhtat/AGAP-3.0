@@ -18,7 +18,7 @@ tests"). CI runs the same suites on every push.
 | ChordAI | Python solver; the JavaScript on the web page matches it | 26 tests + 572 parity checks |
 | Launcher, bridge | Doctor, bring-up, console, flash command, remote bridge (auth, injection attempts, limits, STOP priority) | 64 + 40 tests |
 | Part measuring | G-code / STL / SVG inspectors, fit checker, deck drawing | 4 suites |
-| **Design-file claims** | Facts in `HARDWARE_SPECS.md` checked against the real `.hvs` / `.stl` files: rails identical, jaws the same shape, clamps different, plate sockets match their STLs, rail slot pitch follows the fret rule, bed overrun flagged, each file's SHA recorded in the docs. Needs the files (not committed): set `AGAP_PARTS_DIR`. Without them the suite reports **SKIP**, not PASS | 14 tests (CI skips them) |
+| **Design-file claims** | Facts in `HARDWARE_SPECS.md` checked against the real `.hvs` / `.stl` files: rails identical, jaws the same shape, clamps different, plate sockets match their STLs, rail slot pitch follows the fret rule, bed overrun flagged, each file's SHA recorded in the docs. Needs the files (not committed): set `AGAP_PARTS_DIR`. Without them the suite reports **SKIP**, not PASS | 20 tests (CI skips them) |
 | Both sketches compile for the Mega 2560 | `arduino-cli` (also in CI) | 3 sketches |
 
 **Safety rules the simulation enforces on every simulated millisecond** (including
@@ -59,7 +59,7 @@ Every one is guarded by a test that fails without the fix (checked by putting th
 | 11 | The fretboard doctor check expected the 3-fret answer for Bm, so it would fail on a healthy board | Self-review | False alarm on first power-up | Expects the 5-fret answer; pinned in the C++ test |
 | 12 | A sketch-defined type used before the first function broke the real Arduino build though the PC build passed | Compiling for the board | Sketch did not build | Type declared above the first function |
 | 13 | The specs said the rails and lower jaws were "true mirror pairs"; the rail STLs are in fact byte-identical and the jaws the same shape | Comparing the new rail print file with the STLs | Wrong assumption when mounting the rails | Text corrected; `stl_inspect.py --compare` and a test pin it |
-| 14 | The rail print file moves to X = 155 mm, outside its own 150 mm slicer profile; nothing flagged it | Reading the new rail file | A print that clips or collides if the bed really is 150 mm | `hvs_inspect.py` now warns on every run; test pins it; manual says to check the bed |
+| 14 | The rail print file moves to X = 155 mm, outside its own 150 mm slicer profile; nothing flagged it. The superseded clamp bed did the same (X = 155.1 mm) | Reading the new rail file, then re-checking the older one | A print that clips or collides if the bed really is 150 mm | `hvs_inspect.py` now warns on every run; test pins it; manual says to check the bed. The finalized clamp bed fits (X <= 122 mm) |
 
 ## Phase 2: bench testing on the real hardware (not started)
 

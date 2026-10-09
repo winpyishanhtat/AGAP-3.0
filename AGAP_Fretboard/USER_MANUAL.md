@@ -33,12 +33,14 @@ a little tight; allow for it.)
 Print the rails, clamps, jaws, five plates and shims. Three print files are ready (the rail
 bed is named `01-rail-left` but holds **both rails**; they are the same part, and its moves
 reach X = 155 mm, so check your printer's real bed size first): the clamp
-bed holds 2 clamps, 2 jaws and 22 shims; the plate bed (named `04-fret-1...`) holds **all five
+bed (the finalized `02-upper-clamp-body-end ... (2)` file) holds 2 upper clamps and 2 jaws,
+about 2.2 hours with no supports; the plate bed (named `04-fret-1...`) holds **all five
 plates**, takes about 5.5 hours in ABS at 0.2 mm, and is sliced **with supports and a raft**, so
 cut the support out from under each plate's two mounting ears and out of the ear slots. **Mark the two upper clamps: the
 body-end and nut-end ones are not interchangeable** (their walls are 44.5 mm and
-39.0 mm apart). The thin shims print 0.9 mm and the thick 1.95 mm, a little under
-their 1 and 2 mm names, so measure them. The files do not say how
+39.0 mm apart). **No print file includes the 1 mm and 2 mm shims any more**, so print
+`05-height-shim-1mm` and `-2mm` separately (the earlier file printed them 0.9 mm and 1.95 mm,
+a little under their names, so measure them). The files do not say how
 they join, so assemble from your own drawing. Use the shims to set the plunger's
 distance from the string. Check for yourself that each socket sits over its
 string; the sockets are 7.1 mm apart on plate 1 and 7.9 mm on plate 5.

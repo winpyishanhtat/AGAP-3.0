@@ -29,7 +29,8 @@ def parts_dir():
 PARTS = parts_dir()
 RAIL_BED = "01-rail-left(3DP-210F_ABS).hvs"
 PLATE_BED = "04-fret-1-six-socket-plate(3DP-210F_ABS).hvs"
-CLAMP_BED = "02-upper-clamp-body-end(3DP-210F_ABS).hvs"
+CLAMP_BED = "02-upper-clamp-body-end(3DP-210F_ABS) (2).hvs"   # the finalized version
+OLD_CLAMP_BED = "02-upper-clamp-body-end(3DP-210F_ABS).hvs"   # superseded: 22 shims, ran past the profile
 
 
 def need(*names):
@@ -123,6 +124,51 @@ class TestBedClaims(unittest.TestCase):
         self.assertTrue(math.isclose(hv.print_seconds(PARTS / PLATE_BED) / 3600, 5.5, abs_tol=0.1))
 
 
+class TestClampBed(unittest.TestCase):
+    @need(CLAMP_BED)
+    def test_finalized_bed_is_two_jaws_and_two_upper_clamps_and_nothing_else(self):
+        _, h, layers = hv.parse(PARTS / CLAMP_BED)
+        rows = {r["size"]: r for r in hv.census(layers, h)}
+        self.assertEqual(rows[(81.6, 11.6)]["count"], 2)     # lower jaws, 6.00 mm
+        self.assertAlmostEqual(rows[(81.6, 11.6)]["height_mm"], 6.0, places=2)
+        self.assertEqual(rows[(81.6, 7.6)]["count"], 2)      # upper clamp bases
+        self.assertEqual(rows[(2.1, 7.6)]["count"], 4)       # the four standing walls
+        self.assertNotIn((9.6, 9.6), rows, "shims should no longer be on this bed")
+
+    @need(CLAMP_BED)
+    def test_finalized_bed_fits_the_machine_profile(self):
+        self.assertEqual(hv.bed_warnings(PARTS / CLAMP_BED), [])
+
+    @need(CLAMP_BED)
+    def test_finalized_bed_has_no_raft_and_no_supports_printed(self):
+        cfg = hv.settings(PARTS / CLAMP_BED)
+        self.assertEqual(cfg["adhesion_type"], "none")
+        self.assertIn("0 printed", hv.format_facts(PARTS / CLAMP_BED))
+
+    @need(CLAMP_BED)
+    def test_clamp_walls_keep_the_two_different_spacings(self):
+        _, h, layers = hv.parse(PARTS / CLAMP_BED)
+        rows = {}
+        for b in layers[50]["loops"]:        # standing walls; one pair per clamp, told apart by y
+            rows.setdefault(round(box(b)[3]), []).append(box(b)[2])
+        gaps = sorted(max(v) - min(v) for v in rows.values())
+        self.assertEqual(len(gaps), 2)
+        self.assertAlmostEqual(gaps[0], 39.0, delta=0.15)
+        self.assertAlmostEqual(gaps[1], 44.5, delta=0.15)
+
+    @need(CLAMP_BED)
+    def test_every_part_has_its_two_holes_72mm_apart(self):
+        _, h, layers = hv.parse(PARTS / CLAMP_BED)
+        holes = sorted(round(box(b)[2], 1) for b in layers[10]["loops"] if abs(box(b)[0] - 5.0) < 0.1)
+        self.assertEqual(len(holes), 8)          # 4 parts x 2 holes, 5 mm from each end of an 82 mm part
+        pairs = {}
+        for b in layers[10]["loops"]:
+            if abs(box(b)[0] - 5.0) < 0.1:
+                pairs.setdefault(round(box(b)[3]), []).append(box(b)[2])
+        for xs in pairs.values():
+            self.assertAlmostEqual(max(xs) - min(xs), 72.0, delta=0.1)
+
+
 class TestDocsMatchFiles(unittest.TestCase):
     """Every print file named in the docs has its SHA-256 recorded there, and it is the right one."""
 
@@ -141,6 +187,12 @@ class TestDocsMatchFiles(unittest.TestCase):
     @need(CLAMP_BED)
     def test_clamp_bed_sha_recorded(self):
         self.check(CLAMP_BED)
+
+    @need(OLD_CLAMP_BED)
+    def test_superseded_clamp_bed_is_marked_as_superseded(self):
+        sha = hv.sha256(PARTS / OLD_CLAMP_BED)
+        line = [ln for ln in DOCS.splitlines() if sha in ln]
+        self.assertTrue(line and "superseded" in line[0].lower(), line)
 
 
 if __name__ == "__main__":
