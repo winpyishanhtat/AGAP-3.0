@@ -17,6 +17,7 @@ tests"). CI runs the same suites on every push.
 | **Firmware simulation** | The **real sketches** (`AGAP_Fretboard.ino`, `AGAP_HelperButton.ino`) compiled on the PC against a mock Arduino: serial, clock, ports, EEPROM, servos, buttons. Scripted scenarios plus random-command fuzzing, with safety rules checked on every simulated millisecond | Fretboard 31 scenarios (fuzz: 4,000 commands); helper 12 (fuzz: 3,000) |
 | ChordAI | Python solver; the JavaScript on the web page matches it | 26 tests + 572 parity checks |
 | Launcher, bridge | Doctor, bring-up, console, flash command, remote bridge (auth, injection attempts, limits, STOP priority) | 64 + 40 tests |
+| **Phone page** | What the bridge serves and forbids, the page source (no outside code), page rules identical to the bridge's, the page reading every simulated board reply, and the whole flow over HTTP. See Phase 1b | 29 Python tests + 35 JavaScript checks |
 | Part measuring | G-code / STL / SVG inspectors, fit checker, deck drawing | 4 suites |
 | **Design-file claims** | Facts in `HARDWARE_SPECS.md` checked against the real `.hvs` / `.stl` files: rails identical, jaws the same shape, clamps different, plate sockets match their STLs, rail slot pitch follows the fret rule, bed overrun flagged, each file's SHA recorded in the docs. Needs the files (not committed): set `AGAP_PARTS_DIR`. Without them the suite reports **SKIP**, not PASS | 20 tests (CI skips them) |
 | Both sketches compile for the Mega 2560 | `arduino-cli` (also in CI) | 3 sketches |
@@ -60,6 +61,43 @@ Every one is guarded by a test that fails without the fix (checked by putting th
 | 12 | A sketch-defined type used before the first function broke the real Arduino build though the PC build passed | Compiling for the board | Sketch did not build | Type declared above the first function |
 | 13 | The specs said the rails and lower jaws were "true mirror pairs"; the rail STLs are in fact byte-identical and the jaws the same shape | Comparing the new rail print file with the STLs | Wrong assumption when mounting the rails | Text corrected; `stl_inspect.py --compare` and a test pin it |
 | 14 | The rail print file moves to X = 155 mm, outside its own 150 mm slicer profile; nothing flagged it. The superseded clamp bed did the same (X = 155.1 mm) | Reading the new rail file, then re-checking the older one | A print that clips or collides if the bed really is 150 mm | `hvs_inspect.py` now warns on every run; test pins it; manual says to check the bed. The finalized clamp bed fits (X <= 122 mm) |
+| 15 | The phone page's fretboard diagram was **blank** until a chord was played: the first draw compared an empty key with an empty starting value | Looking at the page in a browser (no unit test could see it) | A blank picture on first load | `boardKey` never returns an empty key; test pins it |
+| 16 | After the bridge died the page kept saying Ready or Locked for about 8 s (two failed polls, plus a slow refused connection), and blamed the USB cable when the network was the problem | Killing the bridge while the page was open | A stale "Ready" on a robot nobody can see | One failed poll shows Offline; `offlineReason` names bridge or board; banner states what the board does on its own |
+| 17 | An edit to `app.js` left a stray brace and killed the whole page; no test noticed | The same browser session (console: `Uncaught SyntaxError`) | A dead page after any bad edit | `node --check` of both scripts is now a test |
+
+## Phase 1b: the phone page ("AGAP Stage")
+
+Automated (run by `python agap.py selftest`, and in CI):
+
+| Check | Why |
+|---|---|
+| The bridge serves exactly four files without a token and nothing else (path tricks such as `/../`, `%2e%2e`, `/app.js%00.py` included) | The robot's computer must not leak its files |
+| A strict Content-Security-Policy on every response; the page has no external URL, inline script, inline style, inline handler, `eval` or `innerHTML` | A page-injection bug could not load or run anything |
+| Both scripts are valid JavaScript | Bug 17 |
+| The page's chord-name filter gives the same answer as the bridge's for 33 tricky names; sequence length and tempo limits equal the bridge's | The page must not offer what the bridge refuses, or accept what it should not |
+| Every action the page sends is in the bridge's list; it never sends `calib` or `press` | No hidden power |
+| The page reads every fingering the simulated board prints (12 roots x 7 qualities) exactly as ChordAI solved it | The picture must match the board |
+| Locked, busy and offline: what the page disables is also what the bridge refuses (403 / 409), and STOP is never disabled | The page's rules and the bridge's must agree |
+| Whole flow over real HTTP: chord, log, fingering, drawn model | End to end without a browser |
+
+Mutation-checked: loosening the page's chord rule, letting `locked` allow chords, and removing
+the policy header each fail tests (caught by 2, 2 and 1 tests).
+
+By hand in the desktop app's built-in browser, against `--simulate` (done; found bugs 15-17):
+
+| Check | Result |
+|---|---|
+| Login with the token; wrong token message | Pass |
+| Play `Bm`: name, "3 coils press, 5 of 6 strings ring", EASY badge, diagram matches `x 2 0 4 0 2` | Pass |
+| Phone width (375 px), dark and light themes | Pass (nut was invisible in light: fixed) |
+| Play a progression: busy state disables controls, chip lights, STOP clears it | Pass |
+| Locked bridge: banner; all chord keys, strum and Play disabled; Release and STOP enabled | Pass |
+| Kill the bridge mid-session: Offline within a few seconds with the right banner | Pass after bug 16 |
+| Browser console: no errors | Pass |
+
+**Not done:** a real phone (touch, Safari, on-screen keyboard, screen lock), over a tunnel,
+screen-reader pass, and anything against a real board. Add these to the bench checklist
+below when the board exists.
 
 ## Phase 2: bench testing on the real hardware (not started)
 

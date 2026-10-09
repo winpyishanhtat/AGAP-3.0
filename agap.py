@@ -825,6 +825,7 @@ def selftest_plan():
     py = [
         ("ChordAI tests", ROOT / "ChordAI", "test_chord_ai"),
         ("Remote bridge tests", ROOT / "bridge", "test_agap_bridge"),
+        ("Phone page tests", ROOT / "bridge", "test_agap_ui"),
         ("Launcher tests", ROOT / "tests", "test_agap"),
         ("G-code inspector tests", ROOT / "tools" / "tests", "test_hvs_inspect"),
         ("LH base fit checker tests", ROOT / "tools" / "tests", "test_lh_fit"),

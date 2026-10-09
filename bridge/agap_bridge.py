@@ -121,22 +121,39 @@ class SerialLink:
 
 
 class SimLink:
-    """A stand-in for development without a board. It echoes plausible
-    replies but is NOT an emulation of the firmware's timing or state."""
+    """A stand-in for development without a board. It is NOT an emulation of the firmware's
+    timing or state. With fretboard=True it answers CHORD / SHOW / SEQUENCE with a fingering line in
+    the firmware's own format ('Bm -> x 2 0 4 0 2  (cost 9)'), solved by ChordAI over frets 0-5,
+    so the phone page has something real to draw. Otherwise it just echoes."""
 
-    def __init__(self):
+    def __init__(self, fretboard=False):
         self.written = []
         self._replies = deque()
         self._cv = threading.Condition()
         self._closed = False
+        self._solve = _load_solver() if fretboard else None
+
+    def _fingering(self, name):
+        try:
+            v = self._solve(name, 5)
+        except (ValueError, KeyError):
+            return "ERR unknown chord"
+        shown = " ".join("x" if f < 0 else str(f) for f in v.frets)
+        return "%s -> %s (cost %d)" % (name, shown + " ", v.cost)   # frets end with a space, as the firmware prints them
 
     def write_line(self, line):
         self.written.append(line)
-        word = line.split(" ", 1)[0]
-        reply = {"STOP": "STOPPED", "PRESS": "PRESSED " + line[6:], "RELEASE": "RELEASED " + line[8:],
-                 "CHORD": line, "SEQUENCE": "STEP " + line[9:], "CALIB": line}.get(word, "OK " + line)
+        parts = line.split()
+        word = parts[0] if parts else ""
+        if self._solve and word in ("CHORD", "SHOW") and len(parts) == 2:
+            replies = [self._fingering(parts[1])]
+        elif self._solve and word == "SEQUENCE":
+            replies = [self._fingering(n) for n in parts[1:]]
+        else:
+            replies = [{"STOP": "STOPPED", "PRESS": "PRESSED " + line[6:], "RELEASE": "RELEASED " + line[8:],
+                        "CHORD": line, "SEQUENCE": "STEP " + line[9:], "CALIB": line}.get(word, "OK " + line)]
         with self._cv:
-            self._replies.append(reply)
+            self._replies.extend(replies)
             self._cv.notify()
 
     def read_line(self):
@@ -147,6 +164,16 @@ class SimLink:
 
     def close(self):
         self._closed = True
+
+
+def _load_solver():
+    """ChordAI's solver, or None if the ChordAI folder is not next to this one (then SimLink echoes)."""
+    sys.path.insert(0, str(HERE.parent / "ChordAI"))
+    try:
+        import chord_ai
+    except ImportError:
+        return None
+    return chord_ai.solve
 
 
 # ------------------------------- bridge -------------------------------
@@ -353,8 +380,26 @@ class Bridge:
 
 # -------------------------------- HTTP --------------------------------
 
+# The only files the bridge will serve without a token: the phone page and its three parts.
+# Nothing else on disk is reachable, whatever path is asked for.
+STATIC_FILES = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/ui.css": ("ui.css", "text/css; charset=utf-8"),
+    "/ui_logic.js": ("ui_logic.js", "text/javascript; charset=utf-8"),
+    "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+}
+# The page loads nothing from outside and runs no inline code, so the browser is told to refuse both.
+CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+       "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+
+
 def make_handler(bridge, token):
-    index_html = (HERE / "index.html").read_bytes() if (HERE / "index.html").exists() else b"<h1>AGAP bridge</h1>"
+    static = {}
+    for url, (name, ctype) in STATIC_FILES.items():
+        f = HERE / name
+        static[url] = (f.read_bytes(), ctype) if f.exists() else None
+    if static["/"] is None:
+        static["/"] = (b"<h1>AGAP bridge</h1>", "text/html; charset=utf-8")
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "AGAPBridge"
@@ -369,6 +414,8 @@ def make_handler(bridge, token):
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", CSP)
+            self.send_header("Referrer-Policy", "no-referrer")
             self.end_headers()
             self.wfile.write(data)
 
@@ -383,8 +430,9 @@ def make_handler(bridge, token):
 
         def do_GET(self):
             path = self.path.split("?", 1)[0]
-            if path == "/":
-                return self._send(200, index_html, "text/html; charset=utf-8")
+            if path in static and static[path] is not None:
+                body, ctype = static[path]
+                return self._send(200, body, ctype)
             if not self._authorized():
                 return
             if path == "/api/status":
@@ -440,7 +488,7 @@ def main():
     if len(token) < 16:
         sys.exit("token must be at least 16 characters")
 
-    link = SimLink() if args.simulate else SerialLink(args.port)
+    link = SimLink(fretboard=args.fretboard) if args.simulate else SerialLink(args.port)
     buttons = [] if args.fretboard else load_buttons(args.map)
     bridge = Bridge(link, buttons, Config(args.allow_calib, args.allow_unconfirmed, args.fretboard))
     bridge.start()

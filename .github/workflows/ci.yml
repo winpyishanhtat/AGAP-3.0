@@ -85,14 +85,20 @@ jobs:
           node parity_test.js expected.json
 
   bridge-tests:
-    name: Remote bridge tests (Python)
+    name: Remote bridge and phone page tests (Python, Node)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m unittest test_agap_bridge -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: python -m unittest test_agap_bridge test_agap_ui -v
+        working-directory: bridge
+      - name: Phone page logic (Node, no browser needed)
+        run: node ui_logic_test.js
         working-directory: bridge
 
   firmware-compile:

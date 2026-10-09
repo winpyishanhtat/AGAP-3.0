@@ -590,6 +590,9 @@ class TestFlashAndRepo(unittest.TestCase):
         self.assertFalse(agap.all_skipped("Ran 14 tests in 1.0s" + nl + nl + "OK" + nl))
         self.assertFalse(agap.all_skipped("Ran 3 tests in 1.0s" + nl + nl + "FAILED (failures=1, skipped=3)" + nl))
 
+    def test_phone_page_suite_is_in_the_plan(self):
+        self.assertIn("test_agap_ui", [m for _, _, m, _ in agap.selftest_plan()])
+
     def test_design_file_suite_is_in_the_plan(self):
         self.assertIn("test_real_parts", [m for _, _, m, _ in agap.selftest_plan()])
 
