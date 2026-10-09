@@ -371,11 +371,11 @@ def diagnose_fretboard(banner, ver_lines, version, session):
             "The printed design has 30 solenoids (five six-socket plates). Re-flash `python agap.py flash`.")
 
     shown = session.ask("SHOW Bm")
-    if any("x 2 0 x 0 2" in l for l in shown):
-        add("ok", "On-board chord search", "Bm gives x 2 0 x 0 2, the known answer.", "")
+    if any("x 2 0 4 0 2" in l for l in shown):
+        add("ok", "On-board chord search", "Bm gives x 2 0 4 0 2, the known answer with frets 0-5.", "")
     else:
         add("fail", "On-board chord search", "SHOW Bm gave: %s" % (" | ".join(shown) or "nothing"),
-            "Expected x 2 0 x 0 2. The chord search on the board disagrees with ChordAI; re-flash, "
+            "Expected x 2 0 4 0 2. The chord search on the board disagrees with ChordAI; re-flash, "
             "and if it persists send logs/ to whoever maintains the firmware.")
 
     status = session.ask("STATUS")
@@ -790,17 +790,28 @@ def cmd_flash(args):
     return 0
 
 
-def cmd_bridge(args):
+def bridge_command(args, port=None):
+    """The command that starts the remote bridge. It drives the final 30-solenoid
+    firmware unless --helper asks for the earlier chord-helper protocol."""
     cmd = [sys.executable, str(ROOT / "bridge" / "agap_bridge.py")]
+    if not getattr(args, "helper", False):
+        cmd.append("--fretboard")
     if args.simulate:
         cmd += ["--simulate", "--allow-unconfirmed"]
     else:
-        port = choose_port(args.port)
-        if not port:
-            return 1
         cmd += ["--port", port]
         if args.allow_unconfirmed:
             cmd.append("--allow-unconfirmed")
+    return cmd
+
+
+def cmd_bridge(args):
+    port = None
+    if not args.simulate:
+        port = choose_port(args.port)
+        if not port:
+            return 1
+    cmd = bridge_command(args, port)
     print("Starting the bridge (Ctrl+C stops it and sends STOP to the board).")
     print("Open http://localhost:8080 and paste the token it prints.\n")
     try:
@@ -917,7 +928,9 @@ def build_parser():
                     help="fretboard = final 30-solenoid design (default); helper = earlier chord-helper build")
     b = sub.add_parser("bridge")
     b.add_argument("--simulate", action="store_true", help="no board: try the page against a stand-in")
-    b.add_argument("--allow-unconfirmed", action="store_true")
+    b.add_argument("--allow-unconfirmed", action="store_true",
+                   help="accept hardware that has not been checked locally (the bridge refuses chords otherwise)")
+    b.add_argument("--helper", action="store_true", help="the earlier chord-helper firmware instead of the fretboard")
     return ap
 
 

@@ -59,6 +59,10 @@ CALIB_MAX_HOLD_MS = 2000
 CALIB_MAX_REPS = 10
 CALIB_MIN_GAP_MS = 500
 LABEL_RE = re.compile(r"^[A-Za-z0-9]{1,8}$")
+# Fretboard mode: the board solves chord names itself, so a name is sent as typed
+# (CM7 is not Cm7). Only characters a chord name can contain are allowed, ASCII only.
+# fullmatch, not "^...$": "$" also matches just before a trailing newline.
+CHORD_NAME_RE = re.compile(r"[A-Ga-g][#b]?[A-Za-z0-9+\-]{0,10}")
 
 
 class CommandError(Exception):
@@ -71,9 +75,13 @@ class CommandError(Exception):
 
 
 class Config:
-    def __init__(self, allow_calib=False, allow_unconfirmed=False):
+    def __init__(self, allow_calib=False, allow_unconfirmed=False, fretboard=False):
         self.allow_calib = allow_calib
+        # Helper build: allow buttons not marked confirmed. Fretboard build: there are no
+        # per-button confirmations, so this is "I accept driving hardware that has not
+        # been checked locally"; without it nothing but STOP and RELEASE is accepted.
         self.allow_unconfirmed = allow_unconfirmed
+        self.fretboard = fretboard
 
 
 def load_buttons(path):
@@ -226,7 +234,62 @@ class Bridge:
         self._busy_until = now + busy_s
         return {"sent": lines}
 
+    # ---- fretboard mode ----
+    def _need_untested_ok(self):
+        if not self.cfg.allow_unconfirmed:
+            raise CommandError(403, "this hardware has not been checked locally yet "
+                                    "(start the bridge with --allow-unconfirmed to override)")
+
+    @staticmethod
+    def _chord_name(v):
+        if not isinstance(v, str) or not CHORD_NAME_RE.fullmatch(v):
+            raise CommandError(400, "not a chord name (letters A-G, optional # or b, then letters/digits)")
+        return v
+
+    def _string_fret(self, p):
+        return (self._int(p, "string", None, 1, 6), self._int(p, "fret", None, 1, 5))
+
+    def _build_fret(self, action, p):
+        if action == "chord":
+            self._need_untested_ok()
+            return ["CHORD " + self._chord_name(p.get("target"))], 0.0
+        if action == "strum":
+            self._need_untested_ok()
+            d = str(p.get("direction", "D")).upper()
+            if d not in ("D", "U"):
+                raise CommandError(400, "direction must be D or U")
+            return ["STRUM " + d], 0.0
+        if action == "sequence":
+            self._need_untested_ok()
+            targets = p.get("targets")
+            if not isinstance(targets, list) or not 1 <= len(targets) <= MAX_SEQUENCE:
+                raise CommandError(400, "targets must be a list of 1 to %d chords" % MAX_SEQUENCE)
+            bpm = self._int(p, "bpm", 50, *BPM_RANGE)
+            names = [self._chord_name(t) for t in targets]
+            return ["TEMPO %d" % bpm, "SEQUENCE " + " ".join(names)], len(names) * 60.0 / bpm + 2.0
+        if action == "press":
+            self._need_untested_ok()
+            string, fret = self._string_fret(p)
+            return ["PRESS %d %d" % (string, fret)], 0.0
+        if action == "release":  # letting go is always allowed
+            if str(p.get("target", "")).strip().upper() == "ALL":
+                return ["RELEASE ALL"], 0.0
+            string, fret = self._string_fret(p)
+            return ["RELEASE %d %d" % (string, fret)], 0.0
+        if action == "calib":
+            if not self.cfg.allow_calib:
+                raise CommandError(403, "calib is disabled (start the bridge with --allow-calib)")
+            self._need_untested_ok()
+            string, fret = self._string_fret(p)
+            hold = self._int(p, "hold_ms", 1000, 100, CALIB_MAX_HOLD_MS)
+            reps = self._int(p, "reps", 3, 1, CALIB_MAX_REPS)
+            gap = self._int(p, "gap_ms", 800, CALIB_MIN_GAP_MS, 10000)
+            return ["CALIB %d %d %d %d %d" % (string, fret, hold, reps, gap)], reps * (hold + gap) / 1000.0 + 2.0
+        raise CommandError(400, "unknown action (allowed: chord, press, release, strum, sequence, calib, stop)")
+
     def _build(self, action, p):
+        if self.cfg.fretboard:
+            return self._build_fret(action, p)
         if action in ("chord", "press"):
             b = self.resolve(p.get("target", ""))
             self._check_confirmed(b)
@@ -269,6 +332,7 @@ class Bridge:
             "busy": now < self._busy_until,
             "allow_calib": self.cfg.allow_calib,
             "allow_unconfirmed": self.cfg.allow_unconfirmed,
+            "fretboard": self.cfg.fretboard,
             "buttons": [{"label": b["label"], "chord": b["chord"], "confirmed": b["confirmed"]} for b in self.buttons],
         }
 
@@ -364,6 +428,8 @@ def main():
     ap.add_argument("--http-port", type=int, default=8080)
     ap.add_argument("--map", type=Path, default=DEFAULT_MAP)
     ap.add_argument("--token", help="API token (or set AGAP_BRIDGE_TOKEN); generated if omitted")
+    ap.add_argument("--fretboard", action="store_true",
+                    help="drive the final 30-solenoid firmware (chord names), not the earlier chord-helper build")
     ap.add_argument("--allow-calib", action="store_true")
     ap.add_argument("--allow-unconfirmed", action="store_true",
                     help="allow buttons not marked confirmed in button_map.json (testing)")
@@ -375,7 +441,8 @@ def main():
         sys.exit("token must be at least 16 characters")
 
     link = SimLink() if args.simulate else SerialLink(args.port)
-    bridge = Bridge(link, load_buttons(args.map), Config(args.allow_calib, args.allow_unconfirmed))
+    buttons = [] if args.fretboard else load_buttons(args.map)
+    bridge = Bridge(link, buttons, Config(args.allow_calib, args.allow_unconfirmed, args.fretboard))
     bridge.start()
     server = make_server(bridge, token, args.host, args.http_port)
 
@@ -383,7 +450,10 @@ def main():
     print(f"Token: {token}")
     if args.host not in ("127.0.0.1", "localhost"):
         print("WARNING: listening beyond localhost with no TLS. Put it behind a VPN/tunnel.")
-    if not args.allow_unconfirmed:
+    if args.fretboard and not args.allow_unconfirmed:
+        print("Fretboard mode: only STOP and RELEASE are accepted until you pass --allow-unconfirmed "
+              "(the hardware has not been checked locally).")
+    elif not args.allow_unconfirmed:
         print("Only buttons marked confirmed in button_map.json will be accepted.")
     try:
         server.serve_forever()

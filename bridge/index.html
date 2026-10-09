@@ -91,6 +91,19 @@
       if (!s.connected) say("Bridge lost the serial link to the board.", true);
       else say(s.busy ? "Busy - STOP cancels." : "Ready.");
       var g = $("chords");
+      if (s.fretboard && !g.children.length) {
+        ["C", "D", "E", "F", "G", "A", "Am", "Dm", "Em", "Bm"].forEach(function (n) {
+          var el = document.createElement("button");
+          el.textContent = n;
+          el.onclick = function () { send({ action: "chord", target: n }); };
+          g.appendChild(el);
+        });
+        var box = document.createElement("div");
+        box.className = "row"; box.style.gridColumn = "1 / -1";
+        box.innerHTML = '<input type="text" id="chordname" placeholder="Any chord, e.g. F#m7" aria-label="Chord name" autocomplete="off"><button id="playchord">Play</button>';
+        g.appendChild(box);
+        $("playchord").onclick = function () { send({ action: "chord", target: $("chordname").value.trim() }); };
+      }
       if (!g.children.length) {
         s.buttons.forEach(function (b) {
           var el = document.createElement("button");

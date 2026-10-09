@@ -50,7 +50,7 @@
     <h2 id="h-simplify">Simplify a chord</h2>
     <div class="row">
       <input type="text" id="chord" value="Bm" aria-label="Chord name, for example F#m7" autocomplete="off">
-      <label>Max fret <select id="maxfret"><option>3</option><option>4</option><option>5</option></select></label>
+      <label>Max fret <select id="maxfret"><option>3</option><option>4</option><option selected>5</option></select></label>
       <button id="go">Simplify</button>
     </div>
     <div id="result"></div>
@@ -76,7 +76,7 @@
   <footer>
     Same search as the Arduino firmware's on-board chord solver, ported from
     <a href="https://github.com/winpyishanhtat/AGAP-3.0/blob/main/ChordAI/chord_ai.py">chord_ai.py</a>
-    and checked against it on every chord. The robot's reach is frets 0&ndash;3.
+    and checked against it on every chord. The final robot reaches frets 0&ndash;5 (the earlier one reached 0&ndash;3).
   </footer>
 </main>
 <script src="chord_ai.js"></script>

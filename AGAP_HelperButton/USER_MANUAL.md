@@ -1,5 +1,7 @@
 # AGAP Helper-Button System — Step-by-Step User Manual
 
+> **Earlier design.** The final design is the 30-solenoid fretboard: see [`../AGAP_Fretboard/USER_MANUAL.md`](../AGAP_Fretboard/USER_MANUAL.md). This manual is kept for the chord-helper build.
+
 This walks through getting [`AGAP_HelperButton.ino`](AGAP_HelperButton.ino)
 running on real hardware, from an empty Arduino Mega to playing a chord.
 It assumes you've read the "what's confirmed vs. placeholder" warning in

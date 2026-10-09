@@ -35,6 +35,9 @@ static void known_shapes() {
   const int8_t am[6] = {-1, 0, 2, 2, 1, 0};
   const int8_t e[6] = {0, 2, 2, 1, 0, 0};
   CHECK(shape("Bm", 3, bm, 18));
+  // With the fretboard's five frets the search finds an easier Bm (G string, fret 4).
+  const int8_t bm5[6] = {-1, 2, 0, 4, 0, 2};
+  CHECK(shape("Bm", 5, bm5, 9));
   CHECK(shape("C", 3, c, 9));
   CHECK(shape("G", 3, g, 3));
   CHECK(shape("Am", 3, am, 9));

@@ -8,7 +8,7 @@
   ChordAI), the matching solenoids press the strings, then the six servo picks
   of the AutoStrummer sound only the strings that ring.
 
-    CHORD Bm   ->  x 2 0 x 0 2  ->  press 3 solenoids  ->  strum 4 strings
+    CHORD Bm   ->  x 2 0 4 0 2  ->  press 3 solenoids  ->  strum 5 strings
 
   Everything marked "placeholder" below is an unmeasured starting value
   (README_AGAP.md step 5). Nothing here has run on real hardware. Tune with

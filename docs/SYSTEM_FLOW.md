@@ -12,15 +12,18 @@ Playing a chord takes two things:
   part, and it's what the robot replaces.
 - **The right hand strums.**
 
-The robot does it like this:
+The final design does it like this:
 
-1. You pick a chord, with a panel button or from a phone or computer.
-2. A small computer board (an **Arduino Mega**) receives the choice.
-3. Small electromagnets (**solenoids**), held in the printed **LH base**, push a button on a **chord helper**,
-   a purchased device clamped to the guitar neck that presses the strings
-   into a chord shape.
-4. Six small motors (**servos**), one per independent pod of the **AutoStrummer**,
-   strum the strings, so the guitar makes a real chord, not a synthesized one.
+1. You pick a chord (say `Bm`), with a panel button or from a phone or computer.
+2. A small computer board (an **Arduino Mega**) works out the easiest way to
+   finger that chord (`x 2 0 4 0 2`), using the same search as the standalone
+   Chord AI.
+3. **30 small electromagnets (solenoids)** sit in five printed plates, one plate
+   per fret (frets 1 to 5), six sockets each, one per string. The board switches
+   on just the ones that finger the chord (at most six at once), and they press
+   the strings down.
+4. **Six small motors (servos)**, one per pod of the **AutoStrummer**, pluck only
+   the strings that ring, so the guitar makes a real chord, not a synthesized one.
 
 The board can't power the electromagnets itself. It switches driver circuits
 (a MOSFET or relay plus a flyback diode per channel), and those drive the
@@ -29,78 +32,75 @@ coils from a separate 12 V supply.
 ## System flow
 
 ```
-ChordAI (optional, standalone)     "Bm" -> easiest shape x 2 0 x 0 2
-        |
-You choose a chord ── panel button ──────────────────────┐
-        |                                                |
- phone / browser                                         |
-        | HTTP (token)                                   |
-   Remote bridge  (bridge/)                              |
-        | text commands                                  |
-   PC control tool (tools/)  ── USB serial, 115200 ──────┤
-                                                         v
+You choose a chord ── panel button ───────────────────────┐
+        |                                                 |
+ phone / browser                                          |
+        | HTTP (token)                                    |
+   Remote bridge  (bridge/)                               |
+        | text commands                                   |
+   Launcher / control tools  ── USB serial, 115200 ───────┤
+                                                          v
                                               Arduino Mega firmware
-                                          (AGAP_HelperButton/*.ino)
-                                                         |
-                          kick (full power) then hold (low power) PWM
-                                                         v
-                                   driver circuits -> 12 V solenoids
-                                                         v
-                                  solenoid pushes a button on the chord helper
-                                                         v
-                                  helper presses the strings into the chord
-                                                         v
-                                  6 servos strum the strings (down / up)
+                                          (AGAP_Fretboard/*.ino)
+                                                          |
+              "Bm" -> on-board chord search -> x 2 0 4 0 2  (frets 0-5)
+                                                          |
+                 fingering -> solenoid channels, one per string per fret
+                          kick (full power), then hold (low power) PWM
+                                                          v
+                                    driver circuits -> 12 V solenoids
+                                                          v
+                      solenoids in the five fret plates press the strings
+                                                          v
+             6 AutoStrummer servos pluck only the strings that ring
 ```
 
 ### Step by step
 
-1. **Choosing a chord.** Optionally, [ChordAI](../ChordAI/) simplifies a hard
-   chord (it also runs as a [web page](https://winpyishanhtat.github.io/AGAP-3.0/)).
-   It needs no robot.
-2. **Sending commands.** The control tool (C++ or Python) reads
-   `AGAP_HelperButton/button_map.json`, turns a name like `Em` into the
-   helper's label `EM`, and sends a line like `CHORD EM` over USB.
-   The remote bridge does the same for requests from a phone, behind a token.
-3. **The firmware** (`loop()`) reads serial lines and the four panel buttons
-   (STRUM, NEXT, PREV, STOP on A0-A3). The state machine in `agap_logic.h`
-   decides what happens next. With only the panel buttons, steps 1-2 are
-   skipped and no PC is needed.
-4. **Pressing.** Each channel goes off -> pending -> kick (full power for
-   `kickMs`) -> hold (about 60/255 duty). The kick seats the button; the
-   lower hold power keeps it down without overheating the coil. A Timer2
-   interrupt (about 7.8 kHz) applies the masks to pins D22-D29, D37, D36.
-5. **Strumming.** After a short settle delay the six servos (D2-D7) pluck the
-   strings one at a time, 18 ms apart, alternating down and up.
-6. **Safety.** `STOP` works from the serial line or the panel button, even
-   in the middle of `SEQUENCE` or `CALIB`. Any channel held longer than
-   8 seconds without a refresh releases itself. The bridge sends `STOP`
-   when it exits.
+1. **Choosing a chord.** From the panel buttons (progression), the console, a
+   script, or the phone page. [ChordAI](../ChordAI/) does the same simplification
+   on a PC, and also runs as a [web page](https://winpyishanhtat.github.io/AGAP-3.0/).
+2. **On the board.** `CHORD Bm` is solved by the search in `agap_chords.h`, a C++
+   port of ChordAI checked against the Python on every chord. It only uses frets
+   0-5, because the fretboard has solenoids on frets 1-5.
+3. **To solenoids.** Each pressed fret is one channel, `(fret - 1) * 6 + string`.
+   One plate is six consecutive channels. The kick-and-hold PWM runs on four output
+   ports from one timer interrupt.
+4. **Strumming.** After a short settle delay the servos pluck the strings that
+   ring, 18 ms apart, alternating down and up. Muted strings are skipped.
+5. **Safety.** At most 6 coils on at once (enforced); `STOP` from the serial line
+   or panel button works at any time, even mid-sequence; a coil held 8 s without a
+   refresh releases itself; the remote bridge sends `STOP` when it exits.
 
 ## The "AI" part
 
-Some chords (F, B minor) are hard because one finger must press several
-strings at once, a barre. ChordAI searches the possible finger positions,
-scores each one (fingers needed, notes missing, muted strings, whether the
-bass note is the root), and keeps the easiest shape that still sounds like
-the chord. B minor becomes `x 2 0 x 0 2`.
+Some chords (F, B minor) are hard because one finger must press several strings
+at once, a barre. ChordAI searches the possible finger positions, scores each one
+(fingers needed, notes missing, muted strings, whether the bass note is the root),
+and keeps the easiest shape that still sounds like the chord. With 30 solenoids
+the robot can finger almost any shape inside frets 1-5, so the search is used to
+pick a *good* shape rather than to avoid a hard one.
 
 ## What is in the repo
 
 | Folder | What it is |
 |---|---|
-| `AGAP_HelperButton/` | Current firmware, wiring/user manual, 74 logic tests |
-| `AGAP_Mega/` | Earlier design: 18 solenoids pressing strings directly. Kept for reference |
-| `tools/` | PC control tool in C++ and Python, 49 logic tests for the C++ one; `hvs_inspect.py` measures printed parts; `lh_fit.py` checks solenoid fit in the LH base |
-| `bridge/` | Remote-control bridge and phone page, 28 tests |
+| `AGAP_Fretboard/` | **Final design firmware**: 30 solenoids, on-board chord search, manual |
+| `AGAP_HelperButton/` | Earlier design: 10 solenoids pressing a purchased chord helper (kept for reference) |
+| `AGAP_Mega/` | First design: 18 solenoids on frets 1-3 (kept for reference) |
+| `tools/` | PC tools: C++ and Python control tools (earlier helper protocol), part measuring (`hvs_inspect.py`, `stl_inspect.py`, `lh_fit.py`) |
+| `bridge/` | Remote-control bridge and phone page (see its README for what it supports) |
 | `ChordAI/` | Chord simplifier (Python, plus the browser version in `web/`) |
-| `.github/workflows/` | CI that runs every test and compiles both sketches; Pages deploy |
-| `README_AGAP.md` | Design status, physical constraints, and the bench steps still to do |
+| `agap.py` | Launcher: doctor, bring-up, console, flash, selftest |
+| `docs/` | Hardware measurements, tuning guide, this overview |
+| `.github/workflows/` | CI that runs every test and compiles the sketches; Pages deploy |
+| `README_AGAP.md` | Design status and the bench steps still to do |
 
 ## Status
 
-- **Done:** all the software. It compiles and passes its automated checks
-  in CI.
-- **Not done:** everything that touches real hardware. Nothing has run on a
-  real board or real solenoids. The pin order, button labels and timings are
-  placeholders until the bench measurements in `README_AGAP.md` are taken.
+- **Done:** the software for the final design. It compiles for the Mega and passes
+  its automated checks in CI, including the C++ chord search against the Python.
+- **Not done:** everything that touches real hardware. Nothing has run on a real
+  board or real solenoids. The pin order, button/panel wiring and timings are
+  placeholders, the solenoid model is not chosen, and how the printed parts join
+  is not in the files. The first job is to print the fit coupon.

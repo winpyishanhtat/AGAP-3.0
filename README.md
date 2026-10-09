@@ -1,6 +1,8 @@
 # AGAP — Arduino Guitar Auto Player (Arduino Mega 2560)
 
-A robot that plays a real guitar. **New here? Read [`docs/SYSTEM_FLOW.md`](docs/SYSTEM_FLOW.md)** for a plain-words overview and the system flow. This repo has two hardware architectures plus a standalone software piece:
+A robot that plays a real guitar. **New here? Read [`docs/SYSTEM_FLOW.md`](docs/SYSTEM_FLOW.md)** for a plain-words overview and the system flow.
+
+**The final design fingers chords directly:** five printed plates (one per fret, frets 1-5) hold **30 solenoids**, one per string per fret; the board solves each chord into a fingering and presses only the solenoids it needs (never more than six at once), then six servo picks strum. Firmware, manual and wiring: [`AGAP_Fretboard/`](AGAP_Fretboard/). This repo also keeps the two earlier designs for reference, plus standalone software.
 
 
 ## Quick start (first time with the real board)
@@ -21,14 +23,15 @@ python agap.py                      # menu  (on Windows: double-click agap.bat)
 Every session is recorded in `logs/` (what was sent, what the board said). If
 something misbehaves, that transcript is the first thing to look at.
 `python agap.py selftest` runs every test on your computer. Wiring and the
-power-up order are in [`AGAP_HelperButton/USER_MANUAL.md`](AGAP_HelperButton/USER_MANUAL.md).
+power-up order are in [`AGAP_Fretboard/USER_MANUAL.md`](AGAP_Fretboard/USER_MANUAL.md).
 
-- **[`AGAP_HelperButton/`](AGAP_HelperButton/) — current direction.** A purchased mechanical chord helper frets the strings; 10 solenoids press the helper's own buttons, 6 servos (reused) strum. Driven by Arduino firmware plus a Python sequencing layer ([`tools/agap_control.py`](tools/agap_control.py)). **Step-by-step build/setup guide: [`AGAP_HelperButton/USER_MANUAL.md`](AGAP_HelperButton/USER_MANUAL.md).** See [`README_AGAP.md`](README_AGAP.md) for the full design status, physical constraints and next steps — the firmware/software side of that document's steps 5–7 is implemented here; steps 1–4 (measuring the real helper, the solenoid, and 3D-printing a fit test) are physical work that still needs doing on the bench. Runs standalone on just the Mega once flashed (no PC needed at runtime) — but still needs per-channel solenoid drivers and external power; the Mega's pins can't power the hardware directly. See the manual's first section for the full answer.
-- **[`AGAP_Mega/`](AGAP_Mega/) — earlier direction, kept for reference.** 18 solenoids press the strings directly on frets 1–3, with an on-board AI search that swaps barre chords for open-chord voicings. Superseded by the helper-button approach above, but the chord-solving idea and strummer code are reused there.
+- **[`AGAP_Fretboard/`](AGAP_Fretboard/) — final design (30 solenoids, frets 1-5).** The firmware for the printed set in [`docs/HARDWARE_SPECS.md`](docs/HARDWARE_SPECS.md): on-board chord search (a C++ port of ChordAI, checked against the Python on every chord), 30 driver channels on four ports, a six-coil limit, six-servo AutoStrummer, saved tuning. Compiles for the Mega and passes its tests in CI; **not yet run on a board**.
+- **[`AGAP_HelperButton/`](AGAP_HelperButton/) — earlier design, kept for reference.** 10 solenoids press the buttons of a purchased chord helper. The part list for the final design no longer includes the helper.
+- **[`AGAP_Mega/`](AGAP_Mega/) — first design, kept for reference.** 18 solenoids on frets 1-3 with an on-board chord search; the final design extends this idea to 5 frets.
 - **[`ChordAI/`](ChordAI/) — the "AI search engine software", standalone.** A plain-Python port of the barre-to-open chord search, with no robot/hardware needed at all — the original spec's requirement that the chord simplifier work on its own as a practice tool. Also does the reverse: name the chord from a fretted shape, then simplify it. 21 passing tests.
-- **[`bridge/`](bridge/) — remote control.** A locked-down HTTP bridge (token, allowlisted actions, STOP always wins) plus a phone page, so the robot can be driven from another device behind a tunnel/VPN. 28 tests; not yet run against a real board.
+- **[`bridge/`](bridge/) — remote control (fretboard and earlier helper modes).** A locked-down HTTP bridge (token, allowlisted actions, STOP always wins) plus a phone page, so the robot can be driven from another device behind a tunnel/VPN. 28 tests; not yet run against a real board.
 
-Both sketches compile clean against `arduino:avr:mega` (verified with `arduino-cli` in this repo).
+All three sketches compile clean against `arduino:avr:mega` (checked by `arduino-cli`, also in CI).
 
 ## Can each feature run on an Arduino?
 

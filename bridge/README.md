@@ -15,26 +15,37 @@ opening a router port. The bridge has no TLS of its own.
 
 ```bash
 pip install pyserial
-python agap_bridge.py --port COM5            # Windows; /dev/ttyACM0 on a Pi
+python agap_bridge.py --port COM5 --fretboard       # the final 30-solenoid firmware
+python agap_bridge.py --port COM5                   # the earlier chord-helper firmware
+python ../agap.py bridge                            # same, port found for you, fretboard by default
 ```
 
 It prints a token. Open `http://localhost:8080`, paste the token, and you get
-a STOP button, one button per chord, strum controls and a sequence box.
+a STOP button, chord buttons, strum controls and a sequence box.
 
-No board yet? `python agap_bridge.py --simulate --allow-unconfirmed` runs
-against a stand-in so you can try the page. The stand-in only echoes
+**Two modes.** `--fretboard` (the final design) accepts chord names such as `F#m7`
+and the board solves them. Without it the bridge only accepts the labels in
+`button_map.json` (the earlier chord-helper build).
+
+**Fretboard mode starts locked.** Until you pass `--allow-unconfirmed`, only
+`stop` and `release` are accepted: nothing about this hardware has been checked
+locally yet, and a remote operator cannot see the robot. Do the local bring-up
+first (`python ../agap.py bringup`), then turn it on.
+
+No board yet? `python agap_bridge.py --simulate --fretboard --allow-unconfirmed`
+runs against a stand-in so you can try the page. The stand-in only echoes
 replies; it does not emulate the firmware's timing or state.
 
 Options: `--host` (default 127.0.0.1), `--http-port`, `--map`, `--token`
 (or `AGAP_BRIDGE_TOKEN`; 16+ characters), `--allow-calib`,
-`--allow-unconfirmed`.
+`--allow-unconfirmed`, `--fretboard`.
 
 ## What it enforces
 
 | Rule | Why |
 |---|---|
 | Token on every API call | Anyone who can send a command moves hardware |
-| Fixed list of actions (chord, press, release, strum, sequence, calib, stop); no raw passthrough | A client can't inject a firmware command. Only labels read from `button_map.json` are ever written to the port |
+| Fixed list of actions (chord, press, release, strum, sequence, calib, stop); no raw passthrough | A client can't inject a firmware command. In helper mode only labels read from `button_map.json` are written to the port; in fretboard mode a chord name must match `[A-G][#b]?` plus up to 10 ASCII letters, digits, `+` or `-` (checked with a full match, so a trailing newline cannot slip through), and `press`/`calib` take only a string 1-6 and a fret 1-5 as integers |
 | STOP always accepted at once, even mid-sequence | Nobody can watch the robot remotely, so cancelling must never be blocked |
 | Other commands refused (409) while a sequence runs; rate-limited (429) | Prevents queueing up presses on a robot you can't see |
 | Buttons not `"confirmed"` in `button_map.json` refused (403) unless `--allow-unconfirmed` | The chord labels are still unverified guesses (README_AGAP.md step 1) |
@@ -52,14 +63,15 @@ All calls need `Authorization: Bearer <token>`.
 - `GET /api/status`: connection, busy flag, button list
 - `GET /api/log`: the last board replies
 - `POST /api/command` with a JSON body, e.g.
-  `{"action":"chord","target":"Em"}`,
+  `{"action":"chord","target":"Em"}` (fretboard: any chord name, `F#m7`),
+  `{"action":"press","string":6,"fret":1}` (fretboard only),
   `{"action":"sequence","targets":["C","G","Am","F"],"bpm":50}`,
   `{"action":"stop"}`
 
 ## Tests
 
 ```bash
-python -m unittest test_agap_bridge -v      # 28 tests, no board needed
+python -m unittest test_agap_bridge -v      # 40 tests, no board needed
 ```
 
 Covers auth, command-injection attempts, the allowlist, the unconfirmed and

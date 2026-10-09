@@ -287,5 +287,147 @@ class TestHttp(unittest.TestCase):
         self.assertEqual(self.call("POST", "/api/other", {})[0], 404)
 
 
+def make_fret(allow_unconfirmed=True, allow_calib=False):
+    link = ab.SimLink()
+    clock = FakeClock()
+    bridge = ab.Bridge(link, [], ab.Config(allow_calib=allow_calib, allow_unconfirmed=allow_unconfirmed,
+                                           fretboard=True), clock=clock)
+    return bridge, link, clock
+
+
+class TestFretboardMode(unittest.TestCase):
+    def test_chord_names_are_sent_with_their_spelling(self):
+        b, link, clock = make_fret()
+        b.execute({"action": "chord", "target": "F#m7"})
+        clock.advance(1)
+        b.execute({"action": "chord", "target": "CM7"})   # capital M matters: CM7 is not Cm7
+        self.assertEqual(link.written, ["CHORD F#m7", "CHORD CM7"])
+
+    def test_refused_until_the_operator_allows_untested_hardware(self):
+        b, link, _ = make_fret(allow_unconfirmed=False)
+        with self.assertRaises(ab.CommandError) as cm:
+            b.execute({"action": "chord", "target": "Em"})
+        self.assertEqual(cm.exception.status, 403)
+        self.assertEqual(link.written, [])
+        b.execute({"action": "stop"})  # STOP is never gated
+        self.assertEqual(link.written, ["STOP"])
+
+    def test_nothing_but_a_chord_name_can_reach_the_serial_port(self):
+        b, link, clock = make_fret()
+        for evil in ["Em;STOP", "Em STOP", "Em\nSTOP", "Em\r\nKICK 300", "../x", "E" * 40, "", None, 5, ["Em"],
+                     "Em/../", "'Em'", "Em$(x)", "ＥＭ"]:
+            clock.advance(1)
+            with self.assertRaises(ab.CommandError, msg=repr(evil)):
+                b.execute({"action": "chord", "target": evil})
+        self.assertEqual(link.written, [])
+
+    def test_sequence_sends_tempo_then_chord_names(self):
+        b, link, _ = make_fret()
+        b.execute({"action": "sequence", "targets": ["C", "G", "Am", "F"], "bpm": 70})
+        self.assertEqual(link.written, ["TEMPO 70", "SEQUENCE C G Am F"])
+
+    def test_sequence_limits_and_bad_names(self):
+        b, link, clock = make_fret()
+        for body in [{"targets": []}, {"targets": ["C"] * 17}, {"targets": ["C", "G;STOP"]},
+                     {"targets": ["C"], "bpm": 5}, {"targets": "C G"}]:
+            clock.advance(1)
+            with self.assertRaises(ab.CommandError):
+                b.execute({"action": "sequence", **body})
+        self.assertEqual(link.written, [])
+
+    def test_press_and_release_take_only_a_string_and_a_fret(self):
+        b, link, clock = make_fret()
+        b.execute({"action": "press", "string": 6, "fret": 1})
+        clock.advance(1)
+        b.execute({"action": "release", "string": 6, "fret": 1})
+        clock.advance(1)
+        b.execute({"action": "release", "target": "ALL"})
+        self.assertEqual(link.written, ["PRESS 6 1", "RELEASE 6 1", "RELEASE ALL"])
+        for bad in [{"string": 0, "fret": 1}, {"string": 7, "fret": 1}, {"string": 6, "fret": 0},
+                    {"string": 6, "fret": 6}, {"string": "6", "fret": 1}, {"string": True, "fret": 1}, {}]:
+            clock.advance(1)
+            with self.assertRaises(ab.CommandError, msg=repr(bad)):
+                b.execute({"action": "press", **bad})
+        self.assertEqual(len(link.written), 3)
+
+    def test_calib_is_off_by_default_and_capped_when_on(self):
+        b, link, _ = make_fret()
+        with self.assertRaises(ab.CommandError) as cm:
+            b.execute({"action": "calib", "string": 6, "fret": 1})
+        self.assertEqual(cm.exception.status, 403)
+        b2, link2, clock2 = make_fret(allow_calib=True)
+        b2.execute({"action": "calib", "string": 6, "fret": 1, "hold_ms": 1000, "reps": 5, "gap_ms": 800})
+        self.assertEqual(link2.written, ["CALIB 6 1 1000 5 800"])
+        for bad in [{"hold_ms": 5000}, {"reps": 50}, {"gap_ms": 100}]:
+            clock2.advance(100)
+            with self.assertRaises(ab.CommandError):
+                b2.execute({"action": "calib", "string": 6, "fret": 1, **bad})
+
+    def test_stop_still_wins_and_busy_still_blocks(self):
+        b, link, clock = make_fret()
+        b.execute({"action": "sequence", "targets": ["C", "G"], "bpm": 60})
+        clock.advance(1)
+        with self.assertRaises(ab.CommandError) as cm:
+            b.execute({"action": "chord", "target": "Em"})
+        self.assertEqual(cm.exception.status, 409)
+        b.execute({"action": "stop"})
+        self.assertEqual(link.written[-1], "STOP")
+
+    def test_status_reports_fretboard_mode_and_no_buttons(self):
+        b, _, _ = make_fret()
+        st = b.status()
+        self.assertTrue(st["fretboard"])
+        self.assertEqual(st["buttons"], [])
+
+    def test_helper_mode_is_unchanged(self):
+        b, link, _ = make()
+        self.assertFalse(b.status()["fretboard"])
+        b.execute({"action": "chord", "target": "Em"})
+        self.assertEqual(link.written, ["CHORD EM"])
+
+
+class TestFretboardHttp(unittest.TestCase):
+    def setUp(self):
+        self.bridge, self.link, self.clock = make_fret()
+        self.bridge.start()
+        self.server = ab.make_server(self.bridge, TOKEN, "127.0.0.1", 0)
+        self.base = "http://127.0.0.1:%d" % self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.bridge.shutdown()
+
+    def post(self, body):
+        req = urllib.request.Request(self.base + "/api/command", data=json.dumps(body).encode(), method="POST")
+        req.add_header("Authorization", "Bearer " + TOKEN)
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_chord_over_http_and_bad_input_rejected(self):
+        self.assertEqual(self.post({"action": "chord", "target": "Bm"}), (200, {"sent": ["CHORD Bm"]}))
+        self.clock.advance(1)  # past the rate limit
+        self.assertEqual(self.post({"action": "chord", "target": "Bm;STOP"})[0], 400)
+        self.assertEqual(self.link.written, ["CHORD Bm"])
+
+
+class TestFretboardFirmwareNames(unittest.TestCase):
+    def test_every_chord_name_the_solver_knows_passes_the_name_filter(self):
+        import sys
+        sys.path.insert(0, str(ab.HERE.parent / "ChordAI"))
+        import chord_ai
+        b, link, clock = make_fret()
+        for root in chord_ai.NOTE_NAMES:
+            for q in chord_ai.QUALITIES:
+                for alias in q.names:
+                    clock.advance(1)
+                    b.execute({"action": "chord", "target": root + alias})
+        self.assertEqual(len(link.written), 12 * sum(len(q.names) for q in chord_ai.QUALITIES))
+
+
 if __name__ == "__main__":
     unittest.main()

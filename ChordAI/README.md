@@ -18,7 +18,7 @@ Nothing to install beyond Python 3.8+. It's one file.
 ## Use
 
 ```bash
-# chord name -> easiest voicing within frets 0-3 (the robot's reach)
+# chord name -> easiest voicing within frets 0-5 (the final robot's reach; --max-fret 3 for the earlier one)
 python chord_ai.py simplify Bm
 # Bm -> Bm: x 2 0 x 0 2  (cost 18, moderate)
 

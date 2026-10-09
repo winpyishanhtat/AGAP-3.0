@@ -1,6 +1,6 @@
 # Printed hardware — what the .hvs files tell us
 
-Five `.hvs` files have been supplied (four first, then `LH.hvs` as an updated design version). They are **G-code for the 3DP-210F printer**
+Five `.hvs` files (G-code) were supplied before the final STL design above. They are **G-code for the 3DP-210F printer**
 (sliced with CubiEngine2, ABS, 0.2 mm layers), one per printed part. They
 are print instructions, not drawings, so everything below was **measured
 from the toolpaths** with [`tools/hvs_inspect.py`](../tools/hvs_inspect.py).
@@ -18,6 +18,88 @@ edges are about one extrusion width (0.4 mm) further out.
 The part numbers are not unique: `08_Hole Slide 1` and `08_LH Base` both carry
 08, so the numbering can't be used to count missing parts. Some parts are
 still not supplied, since nothing here covers the helper mount.
+
+## Final design: the 14 STL parts (30 solenoids, frets 1-5)
+
+The supplied design is a set of 14 binary STL meshes (measured with
+[`tools/stl_inspect.py`](../tools/stl_inspect.py)). Unlike the `.hvs` print
+paths below, an STL is the part itself, so these are design sizes, not
+estimates. They describe **direct fretting**: five six-socket plates, one per
+fret (1 to 5), each socket holding one solenoid that presses one string at one
+fret. That is 5 x 6 = **30 solenoids** and replaces the 10-button chord-helper
+arrangement. (The chord helper and the LH base do not appear in this part list.
+I am treating them as superseded and kept the earlier firmware for reference;
+tell me if that is wrong.)
+
+| Part | Qty | Size X x Y x Z (mm) | Role (from its file name) |
+|---|---|---|---|
+| `00-PRINT-FIRST-solenoid-fit-coupon` | 1 | 15.0 x 16.0 x 14.5 | One socket, to test the solenoid fits before printing the plates |
+| `01-rail-left` / `01-rail-right` | 1 + 1 | 10 x 180 x 6 | Rails along the neck; two 4.6 mm holes and five 4.6 x 12.6 mm slots |
+| `02-upper-clamp-body-end` / `-nut-end` | 1 + 1 | 82 x 8 x 10 | Upper clamp at each end; two 4.6 mm holes |
+| `03-lower-jaw-body-end` / `-nut-end` | 1 + 1 | 82 x 12 x 6 | Lower jaw at each end; two 4.6 mm holes |
+| `04-fret-1` ... `04-fret-5-six-socket-plate` | 5 | 82 x 26 x 14.5 | One plate per fret, six solenoid sockets each |
+| `05-height-shim-1mm` / `-2mm` | 1 + 1 | 10 x 10 x 1 / 2 | Slotted shims (8.6 x 4.6 mm slot) for height adjustment |
+
+The left/right rails, the body-end/nut-end clamps and the body-end/nut-end jaws
+are mirror pairs (identical size and volume). All screw holes are 4.6 mm, a
+clearance size for M4. "Body end" and "nut end" are the guitar's body end and
+nut end of the neck.
+
+### The six-socket plate
+
+Sliced at several heights:
+
+- **Base slab**, 58 x 26 mm and about 2.5 mm thick, with six 4.8 mm holes (one
+  under each socket, presumably for the plunger) and twelve 1.6 x 3.4 mm slots.
+- **Six sockets** standing on it. Each is an open-topped pocket **7.5 x 10.5 mm**
+  inside a 9.9 x 12.9 mm wall, about **12 mm deep** (from 2.5 mm to the 14.5 mm
+  top). The fit coupon is exactly one of these sockets.
+- **Staggered in two rows**, 13 mm apart (y = 6.5 and 19.5 mm), alternating
+  along the plate. That is what lets six 9.9 mm-wide sockets sit on string
+  spacing of 7-8 mm.
+- **End posts and tabs** that bring the overall width to 82 mm.
+
+The socket spacing **grows from plate to plate**, the way string spacing grows
+down a real neck. First socket to last, centre to centre:
+
+| Plate (fret) | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| Span of the six sockets (mm) | 35.6 | 36.7 | 37.8 | 38.7 | 39.6 |
+| Average spacing (mm) | 7.13 | 7.34 | 7.55 | 7.74 | 7.93 |
+
+That widening is the strongest evidence that each socket sits over one string.
+
+### What this means for the software
+
+- **30 channels**, one per (string, fret), each needing its own driver and
+  flyback diode. `AGAP_Fretboard` numbers them `(fret - 1) * 6 + string`, so
+  **one plate is six consecutive channels** and one cable harness serves one
+  plate (pin table in `AGAP_Fretboard/agap_fret.h`).
+- A fingering presses **at most one fret per string, so at most 6 coils at
+  once**; the 12 V supply is sized for 6 coils, not 30, and the firmware refuses
+  a seventh.
+- Frets 0-5 are reachable (open plus five), so the on-board chord search
+  now uses `maxFret = 5`.
+
+### What these files do not tell us
+
+- **The solenoid.** Its body must fit 7.5 x 10.5 mm and about 12 mm deep, and
+  the plunger must pass a 4.8 mm hole, but no file names the model, its plunger
+  length, its stroke or the gap to the string. Print the **coupon first** and
+  try the real solenoid in it.
+- **Which socket is which string.** The sockets are ordered by position along
+  the plate; whether the lowest-x socket is the low E or the high e depends on
+  how the plate is mounted. `PRESS 6 1` (low E, fret 1) shows which socket moves;
+  fix a wrong order by swapping wires.
+- **How the parts join:** how the plates attach to the rails and clamps, and how
+  the assembly clamps the neck. The part names suggest an order (rail, clamp,
+  jaw, plate, shim) but no file gives it.
+- **Rail slot use.** The rail's five 4.6 x 12.6 mm slots match the five plates;
+  they likely let each plate slide about 4 mm along the neck, but that is a guess.
+
+## The earlier parts (`.hvs` print files)
+
+These are the strummer and the earlier chord-helper parts. The strummer (servo pod, deck, pick arms) is still part of the final design; the LH base and the chord helper are not in the final part list.
 
 ## What the files establish, and how the software lines up
 

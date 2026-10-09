@@ -42,16 +42,17 @@ travel, so watch for an arm hitting its stop or the neighbouring string.
 
 ## 2. Kick: the smallest pulse that seats the button reliably
 
-1. Mount one solenoid on one helper button (`AGAP_HelperButton/USER_MANUAL.md`, Step 5, item 6).
-2. `KICK 40`, then `CALIB EM 1000 5 800` (press, hold 1 s, release, 5 times).
-3. Look and listen: does the helper button reach the bottom every time, with
-   a clean chord when strummed? Raise `KICK` in steps of 10 ms until all 5
+1. Mount one solenoid in a socket (fretboard: `AGAP_Fretboard/USER_MANUAL.md`, Steps 1 and 5).
+2. `KICK 40`, then `CALIB 6 1 1000 5 800` on the fretboard (string 6, fret 1: press, hold 1 s, release,
+   5 times). On the earlier helper build the same test is `CALIB EM 1000 5 800`.
+3. Look and listen: does the plunger press the string firmly every time (fretboard), or the helper
+   button reach the bottom (helper build), with a clean note or chord when strummed? Raise `KICK` in steps of 10 ms until all 5
    presses seat. Then add about 20% margin and test again.
 4. Longer kicks only add heat, so do not go higher than needed.
 
 ## 3. Hold: the lowest power that keeps it pressed
 
-1. With the kick set, run `CALIB EM 3000 3 1500` at `HOLD 40`.
+1. With the kick set, run `CALIB 6 1 3000 3 1500` at `HOLD 40` (helper build: `CALIB EM 3000 3 1500`).
 2. If the button creeps back up during the hold, raise `HOLD` by 5 percent.
    Once it holds steadily, add about 5-10 percent margin.
 3. Run a few holds of the longest length you will use, then **feel the coil and
@@ -61,7 +62,7 @@ travel, so watch for an arm hitting its stop or the neighbouring string.
 
 ## 4. Strum timing
 
-1. `CHORD EM`. If the chord sounds muted or buzzy only on the first strum,
+1. `CHORD Em` (helper build: `CHORD EM`). If the chord sounds muted or buzzy only on the first strum,
    the strum is starting before the button has seated: raise `SETTLE_MS`.
 2. If strings sound uneven, adjust `STRUM_GAP_MS`. Re-flash after each change.
 

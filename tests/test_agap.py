@@ -64,8 +64,9 @@ class FakeBoard:
                 self._push("6 strings x 5 frets = 20 channels, at most 6 coils at once" if self.mode == "fret20"
                            else "6 strings x 5 frets = 30 channels, at most 6 coils at once")
             else:
-                self._push("Bm -> x 0 0 x 0 2  (cost 99)" if self.mode == "fretbadsolver"
-                           else "Bm -> x 2 0 x 0 2  (cost 18)")
+                # fretbadsolver answers like the older three-fret search: a wrong build for this board
+                self._push("Bm -> x 2 0 x 0 2  (cost 18)" if self.mode == "fretbadsolver"
+                           else "Bm -> x 2 0 4 0 2  (cost 9)")
             return
         if word == "VERSION":
             self._push("ERR unknown command, type HELP" if self.mode == "old" else "AGAP-helper-button fw 0.4 built test")
@@ -568,6 +569,19 @@ class TestFlashAndRepo(unittest.TestCase):
         out = []
         self.assertEqual(agap.menu(agap.argparse.Namespace(port=None), Script("0"), out.append), 0)
         self.assertTrue(any("Check the connection" in l for l in out))
+
+    def test_bridge_command_defaults_to_the_fretboard_firmware(self):
+        ns = agap.argparse.Namespace(simulate=False, allow_unconfirmed=False, helper=False)
+        cmd = agap.bridge_command(ns, "COM5")
+        self.assertIn("--fretboard", cmd)
+        self.assertEqual(cmd[cmd.index("--port") + 1], "COM5")
+        self.assertNotIn("--allow-unconfirmed", cmd)  # never added silently
+        ns = agap.argparse.Namespace(simulate=False, allow_unconfirmed=False, helper=True)
+        self.assertNotIn("--fretboard", agap.bridge_command(ns, "COM5"))
+        ns = agap.argparse.Namespace(simulate=True, allow_unconfirmed=False, helper=False)
+        sim = agap.bridge_command(ns)
+        self.assertIn("--simulate", sim)
+        self.assertNotIn("--port", sim)
 
     def test_parser_accepts_port_and_command(self):
         a = agap.build_parser().parse_args(["--port", "COM3", "doctor"])

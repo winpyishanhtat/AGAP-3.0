@@ -333,7 +333,7 @@ def build_parser() -> argparse.ArgumentParser:
     # simplify F" both work) - argparse options placed only on the main
     # parser are rejected after the subcommand, which isn't how people type.
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--max-fret", type=int, default=3, help="highest fret the search may use (default 3, matches the robot's reach)")
+    common.add_argument("--max-fret", type=int, default=5, help="highest fret the search may use (default 5: the final robot has solenoids on frets 1-5)")
     common.add_argument("--no-diagram", action="store_true", help="skip the ASCII chord box")
 
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, parents=[common])
