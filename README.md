@@ -7,6 +7,8 @@ A robot that plays a real guitar. **New here? Read [`docs/SYSTEM_FLOW.md`](docs/
 
 **Testing:** `python agap.py selftest` runs every automated test, including the real sketches on a simulated Arduino. What that covers, the bugs it found, and the ordered bench-test checklist for the real robot are in [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md).
 
+**No board yet?** `python agap.py demo` builds the real firmware logic for your PC and starts the phone page on it, so you can click through the whole thing (needs `g++`; add `--http-port 8777` if 8080 is taken).
+
 ## Quick start (first time with the real board)
 
 ```
@@ -31,7 +33,7 @@ power-up order are in [`AGAP_Fretboard/USER_MANUAL.md`](AGAP_Fretboard/USER_MANU
 - **[`AGAP_HelperButton/`](AGAP_HelperButton/) — earlier design, kept for reference.** 10 solenoids press the buttons of a purchased chord helper. The part list for the final design no longer includes the helper.
 - **[`AGAP_Mega/`](AGAP_Mega/) — first design, kept for reference.** 18 solenoids on frets 1-3 with an on-board chord search; the final design extends this idea to 5 frets.
 - **[`ChordAI/`](ChordAI/) — the "AI search engine software", standalone.** A plain-Python port of the barre-to-open chord search, with no robot/hardware needed at all — the original spec's requirement that the chord simplifier work on its own as a practice tool. Also does the reverse: name the chord from a fretted shape, then simplify it. 21 passing tests.
-- **[`bridge/`](bridge/) — remote control (fretboard and earlier helper modes).** A locked-down HTTP bridge (token, allowlisted actions, STOP always wins) plus **"AGAP Stage"**, a musical-theme phone page that draws the fingering on a fretboard (screenshots in [`bridge/README.md`](bridge/README.md)), so the robot can be driven from another device behind a tunnel/VPN. 69 Python tests + 35 JavaScript checks; not yet run against a real board.
+- **[`bridge/`](bridge/) — remote control (fretboard and earlier helper modes).** A locked-down HTTP bridge (token, allowlisted actions, STOP always wins) plus **"AGAP Stage"**, a musical-theme phone page that draws the fingering on a fretboard (screenshots in [`bridge/README.md`](bridge/README.md)), so the robot can be driven from another device behind a tunnel/VPN. Try it with no hardware: `python agap.py demo` (runs the page on the real firmware logic). 85 Python tests + 44 JavaScript checks, including 14 that drive the real sketch; not yet run against a real board.
 
 All three sketches compile clean against `arduino:avr:mega` (checked by `arduino-cli`, also in CI).
 

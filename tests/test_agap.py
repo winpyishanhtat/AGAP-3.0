@@ -596,6 +596,55 @@ class TestFlashAndRepo(unittest.TestCase):
     def test_design_file_suite_is_in_the_plan(self):
         self.assertIn("test_real_parts", [m for _, _, m, _ in agap.selftest_plan()])
 
+    def test_end_to_end_suite_is_in_the_plan(self):
+        self.assertIn("test_agap_e2e", [m for _, _, m, _ in agap.selftest_plan()])
+
+    def test_demo_builds_the_real_sketch_harness_with_the_mock_arduino(self):
+        cmd = agap.sim_serve_build_command("g++", "out.exe")
+        self.assertEqual(cmd[0], "g++")
+        self.assertIn("-include", cmd)
+        self.assertIn("Arduino.h", cmd)
+        self.assertTrue(any(c.replace("\\", "/").endswith("sim/mock") for c in cmd), cmd)
+        self.assertTrue(any(c.endswith("sim_serve.cpp") for c in cmd), cmd)
+        self.assertEqual(cmd[-2:], ["-o", "out.exe"])
+        self.assertTrue((ROOT / "AGAP_Fretboard" / "sim" / "sim_serve.cpp").is_file())
+
+    def test_demo_starts_the_bridge_on_the_real_firmware_logic_and_is_not_locked(self):
+        cmd = agap.demo_bridge_command("sim_serve.exe")
+        self.assertIn("--sim-exe", cmd)
+        self.assertEqual(cmd[cmd.index("--sim-exe") + 1], "sim_serve.exe")
+        self.assertIn("--fretboard", cmd)
+        self.assertIn("--allow-unconfirmed", cmd)    # it is a demo with no hardware to be careful of
+        self.assertNotIn("--port", cmd)
+
+    def test_bridge_and_demo_can_use_another_port(self):
+        self.assertIn("--http-port", agap.demo_bridge_command("x.exe", http_port=9000))
+        cmd = agap.demo_bridge_command("x.exe", http_port=9000)
+        self.assertEqual(cmd[cmd.index("--http-port") + 1], "9000")
+        self.assertNotIn("--http-port", agap.demo_bridge_command("x.exe"))
+        args = agap.build_parser().parse_args(["bridge", "--simulate", "--http-port", "9001"])
+        cmd = agap.bridge_command(args)
+        self.assertEqual(cmd[cmd.index("--http-port") + 1], "9001")
+        self.assertEqual(agap.build_parser().parse_args(["demo", "--http-port", "9002"]).http_port, 9002)
+
+    def test_demo_is_a_command_and_in_the_menu(self):
+        self.assertIn("demo", agap.COMMANDS)
+        self.assertIn("demo", [c for _, c in agap.MENU])
+        self.assertEqual(agap.build_parser().parse_args(["demo"]).cmd, "demo")
+
+    def test_demo_without_a_compiler_says_what_to_install(self):
+        import io, contextlib
+        old = agap.shutil.which
+        agap.shutil.which = lambda name: None
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = agap.cmd_demo(agap.build_parser().parse_args(["demo"]))
+        finally:
+            agap.shutil.which = old
+        self.assertNotEqual(rc, 0)
+        self.assertIn("g++", buf.getvalue())
+
     def test_selftest_does_not_use_bash(self):
         # `bash` on Windows is often the WSL stub and fails without a distro.
         cmd = agap.cpp_compile_command("g++", "x.cpp", "t.exe")

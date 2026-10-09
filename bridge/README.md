@@ -39,6 +39,17 @@ format (`Bm -> x 2 0 4 0 2  (cost 9)`, solved by ChordAI over frets 0-5), so the
 page has something real to draw. It does not emulate the firmware's timing or state:
 a sequence's chords all appear at once, not one per beat.
 
+**Better: try it on the real firmware logic, no board needed.**
+
+```bash
+python ../agap.py demo                       # builds AGAP_Fretboard.ino for this PC and runs the bridge on it
+python ../agap.py demo --http-port 8777      # if port 8080 is taken
+python agap_bridge.py --sim-exe PATH_TO_BUILT_sim_serve --fretboard --allow-unconfirmed   # the same, by hand
+```
+
+The sketch's own parser, chord search and coil logic run on this computer against a mock Arduino
+(needs `g++`), so every reply is the firmware's, not a guess. Still no real timing or electronics.
+
 ## The phone page ("AGAP Stage")
 
 A musical stage theme: walnut and brass in the dark, warm sheet-music paper in the
@@ -113,8 +124,9 @@ All calls need `Authorization: Bearer <token>`.
 ## Tests
 
 ```bash
-python -m unittest test_agap_bridge test_agap_ui -v      # 40 + 29 tests, no board needed
-node ui_logic_test.js                                    # 35 checks of the page logic (Node)
+python -m unittest test_agap_bridge test_agap_ui -v      # 40 + 31 tests, no board needed
+node ui_logic_test.js                                    # 44 checks of the page logic (Node)
+python -m unittest test_agap_e2e -v                      # 14 tests: page -> bridge -> the REAL sketch (needs g++)
 ```
 
 `test_agap_ui` covers what the bridge serves (the four files, nothing else, the policy

@@ -194,7 +194,7 @@
     var kids = [document.createTextNode(label)];
     if (sub) kids.push(el("small", { text: sub }));
     var b = el("button", { "class": "key", "data-action": "chord", "data-allowed": allowed ? "1" : "0",
-                           "aria-pressed": String(S.fingering && S.fingering.name === target) }, kids);
+                           "aria-pressed": String(!!S.fingering && U.sameChord(S.fingering.name, target)) }, kids);
     b.addEventListener("click", function () { S.pressedKey = target; send({ action: "chord", target: target }, "Playing " + label); });
     return b;
   }
@@ -210,7 +210,7 @@
     $("seq").setAttribute("aria-invalid", String(!p.ok && !!$("seq").value.trim()));
     if (!p.ok) return;
     p.chords.forEach(function (c, i) {
-      var now = S.fingering && S.fingering.name === c && S.ui === "busy";
+      var now = !!S.fingering && U.sameChord(S.fingering.name, c) && S.ui === "busy";
       chips.appendChild(el("span", { "class": "chip" + (now ? " now" : "") }, [el("span", { "class": "n", text: String(i + 1) }), document.createTextNode(c)]));
     });
     applyEnabled();

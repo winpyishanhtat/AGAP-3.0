@@ -36,9 +36,18 @@
     return { name: m[1], frets: frets, cost: m[3] === undefined ? null : parseInt(m[3], 10) };
   }
 
+  // The newest fingering the board printed since it last powered up. At power-up the firmware prints
+  // its default progression's fingerings just before its "ready" banner; those are not chords being
+  // played, so anything up to the last banner is ignored.
   function latestFingering(entries) {
-    for (var i = (entries || []).length - 1; i >= 0; i--) {
-      var f = parseFingering(entries[i] && entries[i].line);
+    entries = entries || [];
+    var start = 0;
+    for (var i = entries.length - 1; i >= 0; i--) {
+      var line = entries[i] && entries[i].line;
+      if (typeof line === "string" && /^AGAP\b.*\bready\b/.test(line)) { start = i + 1; break; }
+    }
+    for (var j = entries.length - 1; j >= start; j--) {
+      var f = parseFingering(entries[j] && entries[j].line);
       if (f) return f;
     }
     return null;
@@ -71,6 +80,21 @@
   // What the diagram currently shows; never empty, so "nothing played yet" is drawn too.
   function boardKey(fingering) {
     return fingering ? fingering.name + "|" + fingering.frets.join(",") : "none";
+  }
+
+  // Is the chord the board reports the one that was asked for? The board may spell the root
+  // differently (typed "Bb", reported "A#"), so roots are compared by pitch; the rest of the name
+  // (quality) must match exactly, because "CM7" and "Cm7" are different chords.
+  var PITCH = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  function splitChord(name) {
+    var m = typeof name === "string" ? /^([A-Ga-g])([#b]?)(.*)$/.exec(name) : null;
+    if (!m) return null;
+    var pc = PITCH[m[1].toUpperCase()] + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0);
+    return { pc: (pc + 12) % 12, rest: m[3] };
+  }
+  function sameChord(a, b) {
+    var x = splitChord(a), y = splitChord(b);
+    return !!x && !!y && x.pc === y.pc && x.rest === y.rest;
   }
 
   function validChordName(s) { return typeof s === "string" && CHORD_RE.test(s); }
@@ -131,7 +155,7 @@
   return {
     STRING_NAMES: STRING_NAMES, MAX_FRET: MAX_FRET, ACTIONS: ACTIONS,
     CHORD_GROUPS: CHORD_GROUPS, PRESETS: PRESETS,
-    parseFingering: parseFingering, latestFingering: latestFingering, fretboardModel: fretboardModel, boardKey: boardKey,
+    parseFingering: parseFingering, latestFingering: latestFingering, fretboardModel: fretboardModel, boardKey: boardKey, sameChord: sameChord,
     validChordName: validChordName, parseProgression: parseProgression,
     clampBpm: clampBpm, beatMs: beatMs, uiState: uiState, offlineReason: offlineReason, markUnreachable: markUnreachable, canSend: canSend, difficulty: difficulty
   };

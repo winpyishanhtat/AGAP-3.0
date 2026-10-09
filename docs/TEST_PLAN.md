@@ -17,7 +17,8 @@ tests"). CI runs the same suites on every push.
 | **Firmware simulation** | The **real sketches** (`AGAP_Fretboard.ino`, `AGAP_HelperButton.ino`) compiled on the PC against a mock Arduino: serial, clock, ports, EEPROM, servos, buttons. Scripted scenarios plus random-command fuzzing, with safety rules checked on every simulated millisecond | Fretboard 31 scenarios (fuzz: 4,000 commands); helper 12 (fuzz: 3,000) |
 | ChordAI | Python solver; the JavaScript on the web page matches it | 26 tests + 572 parity checks |
 | Launcher, bridge | Doctor, bring-up, console, flash command, remote bridge (auth, injection attempts, limits, STOP priority) | 64 + 40 tests |
-| **Phone page** | What the bridge serves and forbids, the page source (no outside code), page rules identical to the bridge's, the page reading every simulated board reply, and the whole flow over HTTP. See Phase 1b | 29 Python tests + 35 JavaScript checks |
+| **Whole chain on the real firmware logic** | The phone page's logic, the bridge, and the **real `AGAP_Fretboard.ino`** (compiled for the PC against a mock Arduino): a chord sent over HTTP is solved by the firmware's own code, the page reads its reply, and the simulated coil pins are counted and compared with what the page would draw. See Phase 1c | 14 tests |
+| **Phone page** | What the bridge serves and forbids, the page source (no outside code), page rules identical to the bridge's, the page reading every simulated board reply, and the whole flow over HTTP. See Phase 1b | 31 Python tests + 44 JavaScript checks |
 | Part measuring | G-code / STL / SVG inspectors, fit checker, deck drawing | 4 suites |
 | **Design-file claims** | Facts in `HARDWARE_SPECS.md` checked against the real `.hvs` / `.stl` files: rails identical, jaws the same shape, clamps different, plate sockets match their STLs, rail slot pitch follows the fret rule, bed overrun flagged, each file's SHA recorded in the docs. Needs the files (not committed): set `AGAP_PARTS_DIR`. Without them the suite reports **SKIP**, not PASS | 20 tests (CI skips them) |
 | Both sketches compile for the Mega 2560 | `arduino-cli` (also in CI) | 3 sketches |
@@ -64,6 +65,10 @@ Every one is guarded by a test that fails without the fix (checked by putting th
 | 15 | The phone page's fretboard diagram was **blank** until a chord was played: the first draw compared an empty key with an empty starting value | Looking at the page in a browser (no unit test could see it) | A blank picture on first load | `boardKey` never returns an empty key; test pins it |
 | 16 | After the bridge died the page kept saying Ready or Locked for about 8 s (two failed polls, plus a slow refused connection), and blamed the USB cable when the network was the problem | Killing the bridge while the page was open | A stale "Ready" on a robot nobody can see | One failed poll shows Offline; `offlineReason` names bridge or board; banner states what the board does on its own |
 | 17 | An edit to `app.js` left a stray brace and killed the whole page; no test noticed | The same browser session (console: `Uncaught SyntaxError`) | A dead page after any bad edit | `node --check` of both scripts is now a test |
+| 18 | The page showed **"Now playing: F"** before anything was played: at power-up the firmware prints its default progression's fingerings and the page took the last one for a chord | Running the page against the real firmware (the stand-in never printed them) | A wrong chord displayed on a robot nobody can see | Everything before the boot banner is ignored; test pins it, plus an end-to-end test on the real boot |
+| 19 | Typed **Bb**, the real firmware answers **A#**. The page compared the two names as text, so the pressed key and the lit setlist chip would never light for flats | End-to-end test with the real firmware | Silent loss of the highlight for every flat chord | `sameChord` compares roots by pitch and keeps the quality exact (so `CM7` and `Cm7` stay different) |
+| 20 | Starting the bridge on a busy port (8080 is not free on this PC) crashed with a raw traceback | Trying `agap.py demo` for real | A first-time user is stuck with no advice | Plain message with `--http-port N` advice; the launcher passes the option through |
+| 21 | The bridge's token line did not appear when its output was captured (Python buffers piped output) | The same try-out, with output redirected | A launcher or app that captures output never shows the token | Line-buffered output in the bridge and launcher; test starts the bridge piped and waits for the token |
 
 ## Phase 1b: the phone page ("AGAP Stage")
 
@@ -98,6 +103,44 @@ By hand in the desktop app's built-in browser, against `--simulate` (done; found
 **Not done:** a real phone (touch, Safari, on-screen keyboard, screen lock), over a tunnel,
 screen-reader pass, and anything against a real board. Add these to the bench checklist
 below when the board exists.
+
+## Phase 1c: the whole chain on the real firmware logic
+
+Until now the bridge and page were tested against **stand-ins** that make up the board's replies.
+`AGAP_Fretboard/sim/sim_serve.cpp` runs the **real sketch** (its command parser, chord search, state
+machines, blocking SEQUENCE / CALIB loops, saved tuning and pin masks) on this computer against a
+mock Arduino, as a program that speaks the serial protocol on stdin/stdout. The bridge talks to it
+through `ProcessLink`, so the tests drive: page logic -> HTTP -> bridge -> **real firmware code** ->
+simulated coil pins.
+
+| Check (`python -m unittest test_agap_e2e`, in `selftest` and CI) | Result |
+|---|---|
+| The real firmware boots through the bridge | Pass |
+| `chord Bm` over HTTP: the firmware prints `Bm -> x 2 0 4 0 2  (cost 9)` and exactly the three right coils switch on (channels worked out independently of the firmware) | Pass |
+| `STOP` releases every coil; `release ALL` lets go | Pass |
+| A chord the firmware does not know is refused by the firmware, and no coil moves | Pass |
+| Seven presses: the real firmware refuses the one beyond six coils | Pass |
+| **STOP during a running SEQUENCE** (the blocking loop): the firmware aborts (`ABORTED (STOP)`), every coil releases, the bridge is no longer busy | Pass |
+| **A coil nobody refreshes releases itself between 5 and 10 s later** (the 8 s firmware timeout): a dead phone, bridge or cable cannot leave a solenoid energised | Pass |
+| The page's parser reads the real fingerings of 84 chords and agrees with ChordAI on frets and cost | Pass |
+| For 9 chords, **the number and the channels of coils that switch on equal what the page would draw** | Pass |
+| A freshly booted board reads as "nothing played yet" | Pass (bug 18) |
+| A locked bridge refuses chord / strum / sequence and the coils stay off | Pass |
+| If the firmware dies, the bridge marks itself disconnected and refuses commands (503) | Pass |
+| Across all of the above, the firmware's own safety checks (never more than 6 coils, kick subset of on, no channel beyond 29) were never violated | Pass |
+
+**Mutation-checked on the firmware itself:** raising `MAX_COILS` to 7 fails 2 of these tests; making
+the 8 s coil timeout effectively infinite fails the timeout test. (Both edits were reverted.)
+
+**Design note:** the tests run in real time on purpose. The firmware's 8 s auto-release is a safety
+feature, and racing the simulated clock made coils let go before a test could look at them.
+
+Run it yourself with no hardware: `python agap.py demo` builds the real sketch for this computer and
+starts the bridge on it, then open the page and paste the token. If port 8080 is taken, add
+`--http-port 8777`.
+
+**What this still does not show:** real serial timing and framing, USB, the AVR's speed and interrupt
+timing, drivers, solenoids, a real phone, a tunnel. It proves the software chain, not the robot.
 
 ## Phase 2: bench testing on the real hardware (not started)
 

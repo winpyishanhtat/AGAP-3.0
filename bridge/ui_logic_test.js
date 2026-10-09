@@ -53,6 +53,53 @@ test("board key changes with the chord and with the fingering, and is stable oth
   assert.notStrictEqual(U.boardKey(a), U.boardKey(null));
 });
 
+// ---- the board may name a chord differently from how it was typed -----------------------
+test("a flat typed by the player matches the sharp the board reports (found against the real firmware: Bb -> A#)", () => {
+  assert.ok(U.sameChord("Bb", "A#"));
+  assert.ok(U.sameChord("A#", "Bb"));
+  assert.ok(U.sameChord("Db", "C#"));
+  assert.ok(U.sameChord("Eb7", "D#7"));
+  assert.ok(U.sameChord("Gbm", "F#m"));
+  assert.ok(U.sameChord("Abmaj7", "G#maj7"));
+});
+test("the same name matches itself, and case of the root letter does not matter", () => {
+  assert.ok(U.sameChord("C", "C")); assert.ok(U.sameChord("Am7", "Am7"));
+  assert.ok(U.sameChord("c", "C")); assert.ok(U.sameChord("f#m", "F#m"));
+});
+test("different chords never match (minor vs major seventh included)", () => {
+  assert.ok(!U.sameChord("Bm", "A#m"));          // B minor is not B flat minor
+  assert.ok(!U.sameChord("C", "Cm"));
+  assert.ok(!U.sameChord("CM7", "Cm7"));
+  assert.ok(!U.sameChord("C", "D"));
+  assert.ok(!U.sameChord("Bb", "Bbm"));
+  assert.ok(!U.sameChord("E", "F"));             // E and F are one semitone apart but different roots
+});
+test("B and Cb, E and Fb are not confused with each other", () => {
+  assert.ok(U.sameChord("Cb", "B")); assert.ok(U.sameChord("Fb", "E"));
+  assert.ok(U.sameChord("B#", "C"));
+});
+test("junk and missing names never match", () => {
+  [null, undefined, "", "H", "?", 5].forEach((x) => { assert.ok(!U.sameChord(x, "C")); assert.ok(!U.sameChord("C", x)); });
+});
+
+// ---- power-up chatter is not a chord being played (found against the real firmware) ---------
+const BOOT = [{ line: "C -> x 3 2 0 1 0  (cost 9)" }, { line: "G -> 3 2 0 0 0 3  (cost 3)" }, { line: "Am -> 5 0 2 2 1 0  (cost 4)" },
+              { line: "F -> 1 0 3 2 1 1  (cost 5)" }, { line: "AGAP (fretboard) ready - type HELP" },
+              { line: "AGAP-fretboard fw 0.1" }, { line: "No saved tuning - using compiled defaults." }];
+test("the default progression the firmware prints at power-up is not shown as now playing", () => {
+  assert.strictEqual(U.latestFingering(BOOT), null);
+});
+test("a chord played after power-up is shown", () => {
+  assert.strictEqual(U.latestFingering(BOOT.concat([{ line: "Bm -> x 2 0 4 0 2  (cost 9)" }])).name, "Bm");
+});
+test("a board that resets mid-session clears the old chord", () => {
+  const log = BOOT.concat([{ line: "Bm -> x 2 0 4 0 2  (cost 9)" }], BOOT);
+  assert.strictEqual(U.latestFingering(log), null);
+});
+test("a log with no boot banner (the bridge was started long ago) still works", () => {
+  assert.strictEqual(U.latestFingering([{ line: "Em -> 0 2 2 0 0 0  (cost 2)" }]).name, "Em");
+});
+
 // ---- the fretboard picture ---------------------------------------------------------------
 test("string names run low E to high e", () => {
   assert.deepStrictEqual(U.STRING_NAMES, ["E", "A", "D", "G", "B", "e"]);

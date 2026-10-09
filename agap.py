@@ -23,6 +23,7 @@ import argparse
 import csv
 import datetime
 import json
+import os
 import queue
 import re
 import shutil
@@ -796,6 +797,8 @@ def bridge_command(args, port=None):
     cmd = [sys.executable, str(ROOT / "bridge" / "agap_bridge.py")]
     if not getattr(args, "helper", False):
         cmd.append("--fretboard")
+    if getattr(args, "http_port", None):
+        cmd += ["--http-port", str(args.http_port)]
     if args.simulate:
         cmd += ["--simulate", "--allow-unconfirmed"]
     else:
@@ -813,11 +816,56 @@ def cmd_bridge(args):
             return 1
     cmd = bridge_command(args, port)
     print("Starting the bridge (Ctrl+C stops it and sends STOP to the board).")
-    print("Open http://localhost:8080 and paste the token it prints.\n")
+    print("Open http://localhost:%d and paste the token it prints.\n" % (getattr(args, "http_port", None) or 8080))
     try:
         return subprocess.call(cmd)
     except KeyboardInterrupt:
         return 0
+
+
+def sim_serve_build_command(gpp, out_exe):
+    """Compile the REAL fretboard sketch for this computer, wrapped as a program that speaks the
+    board's serial protocol (AGAP_Fretboard/sim/sim_serve.cpp, against the mock Arduino)."""
+    return [gpp, "-std=c++14", "-include", "Arduino.h", "-I" + str(ROOT / "sim" / "mock"),
+            "-I" + str(ROOT / "AGAP_Fretboard"), str(ROOT / "AGAP_Fretboard" / "sim" / "sim_serve.cpp"),
+            "-o", str(out_exe)]
+
+
+def demo_bridge_command(exe, http_port=None):
+    """The bridge, talking to that program instead of a serial port. Not locked: there is no hardware to protect."""
+    cmd = [sys.executable, str(ROOT / "bridge" / "agap_bridge.py"), "--sim-exe", str(exe),
+           "--fretboard", "--allow-unconfirmed"]
+    if http_port:
+        cmd += ["--http-port", str(http_port)]
+    return cmd
+
+
+def cmd_demo(args):
+    """Try the phone page with no hardware, against the firmware's own code."""
+    gpp = shutil.which("g++")
+    if not gpp:
+        print("The demo compiles the real firmware logic on this computer, so it needs g++")
+        print("(Windows: MinGW-w64 or MSYS2; Linux: build-essential; macOS: Xcode command line tools).")
+        print("Without a compiler, `python agap.py bridge --simulate` still shows the page against a stand-in.")
+        return 1
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        exe = Path(tmp) / ("sim_serve.exe" if os.name == "nt" else "sim_serve")
+        print("Building the firmware simulation (a few seconds)...")
+        r = subprocess.run(sim_serve_build_command(gpp, exe), cwd=str(ROOT / "AGAP_Fretboard" / "sim"),
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if r.returncode != 0:
+            print("Could not build it:")
+            print(r.stdout[-1500:])
+            return 1
+        print("Starting the bridge on the REAL firmware logic. No hardware is involved: chords are solved")
+        print("and 'pressed' by the sketch's own code on this computer. Ctrl+C stops it.")
+        print("Open http://localhost:%d and paste the token it prints." % (getattr(args, "http_port", None) or 8080))
+        print()
+        try:
+            return subprocess.call(demo_bridge_command(exe, getattr(args, "http_port", None)))
+        except KeyboardInterrupt:
+            return 0
 
 
 def selftest_plan():
@@ -826,6 +874,7 @@ def selftest_plan():
         ("ChordAI tests", ROOT / "ChordAI", "test_chord_ai"),
         ("Remote bridge tests", ROOT / "bridge", "test_agap_bridge"),
         ("Phone page tests", ROOT / "bridge", "test_agap_ui"),
+        ("Bridge + page + real firmware (end to end)", ROOT / "bridge", "test_agap_e2e"),
         ("Launcher tests", ROOT / "tests", "test_agap"),
         ("G-code inspector tests", ROOT / "tools" / "tests", "test_hvs_inspect"),
         ("LH base fit checker tests", ROOT / "tools" / "tests", "test_lh_fit"),
@@ -955,6 +1004,7 @@ MENU = [
     ("Guided first power-up (bring-up)", "bringup"),
     ("Console: type commands, watch replies", "console"),
     ("Start the phone / remote bridge", "bridge"),
+    ("Try the phone page now, no hardware (demo)", "demo"),
     ("Flash the firmware onto the board", "flash"),
     ("Run all tests on this computer", "selftest"),
     ("List serial ports", "ports"),
@@ -967,6 +1017,8 @@ def build_parser():
     sub = ap.add_subparsers(dest="cmd")
     for name in ("doctor", "bringup", "console", "selftest", "ports"):
         sub.add_parser(name)
+    d = sub.add_parser("demo")
+    d.add_argument("--http-port", type=int, help="port for the page (default 8080)")
     fl = sub.add_parser("flash")
     fl.add_argument("--sketch", choices=sorted(SKETCHES), default="fretboard",
                     help="fretboard = final 30-solenoid design (default); helper = earlier chord-helper build")
@@ -975,11 +1027,12 @@ def build_parser():
     b.add_argument("--allow-unconfirmed", action="store_true",
                    help="accept hardware that has not been checked locally (the bridge refuses chords otherwise)")
     b.add_argument("--helper", action="store_true", help="the earlier chord-helper firmware instead of the fretboard")
+    b.add_argument("--http-port", type=int, help="port for the page (default 8080)")
     return ap
 
 
 COMMANDS = {"doctor": cmd_doctor, "bringup": cmd_bringup, "console": cmd_console, "bridge": cmd_bridge,
-            "flash": cmd_flash, "selftest": cmd_selftest, "ports": cmd_ports}
+            "flash": cmd_flash, "selftest": cmd_selftest, "ports": cmd_ports, "demo": cmd_demo}
 
 
 def menu(args, input_fn=input, print_fn=print):
@@ -1004,6 +1057,8 @@ def menu(args, input_fn=input, print_fn=print):
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)   # messages show at once even when output is captured
     if not args.cmd:
         return menu(args)
     for k, v in (("simulate", False), ("allow_unconfirmed", False)):

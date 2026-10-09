@@ -120,6 +120,51 @@ class SerialLink:
         self.ser.close()
 
 
+class ProcessLink:
+    """Talks to a program on its stdin / stdout as if it were the board's serial port. Used with
+    AGAP_Fretboard/sim/sim_serve.cpp, which runs the REAL sketch on this computer against a mock
+    Arduino, so the bridge (and the phone page) can be tried against the firmware's own code
+    without hardware. Same limits as any simulation: no real timing, no electronics."""
+
+    def __init__(self, argv):
+        import subprocess
+        self.proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, bufsize=0)
+        self._wlock = threading.Lock()
+
+    def write_line(self, line):
+        with self._wlock:
+            try:
+                self.proc.stdin.write((line + "\n").encode())
+                self.proc.stdin.flush()
+            except (BrokenPipeError, OSError, ValueError) as e:
+                raise ConnectionError("simulated firmware is not running") from e
+
+    def read_line(self):
+        raw = self.proc.stdout.readline()
+        if not raw:
+            raise ConnectionError("simulated firmware exited")
+        return raw.decode("utf-8", "replace").strip()
+
+    def close(self):
+        try:
+            self.proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            self.proc.terminate()
+            self.proc.wait(timeout=3)
+        except Exception:
+            try:
+                self.proc.kill()
+            except Exception:
+                pass
+        try:
+            self.proc.stdout.close()
+        except Exception:
+            pass
+
+
 class SimLink:
     """A stand-in for development without a board. It is NOT an emulation of the firmware's
     timing or state. With fretboard=True it answers CHORD / SHOW / SEQUENCE with a fingering line in
@@ -472,6 +517,9 @@ def main():
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--port", help="serial port of the Mega, e.g. COM5 or /dev/ttyACM0")
     src.add_argument("--simulate", action="store_true", help="no board: use a stand-in link for development")
+    src.add_argument("--sim-exe", type=Path,
+                     help="no board: run the REAL sketch on this computer (build AGAP_Fretboard/sim/sim_serve.cpp; "
+                          "see its header), so you try the page against the firmware's own code")
     ap.add_argument("--host", default="127.0.0.1", help="address to listen on (default 127.0.0.1)")
     ap.add_argument("--http-port", type=int, default=8080)
     ap.add_argument("--map", type=Path, default=DEFAULT_MAP)
@@ -482,19 +530,30 @@ def main():
     ap.add_argument("--allow-unconfirmed", action="store_true",
                     help="allow buttons not marked confirmed in button_map.json (testing)")
     args = ap.parse_args()
+    sys.stdout.reconfigure(line_buffering=True)   # the token must show at once, even when output is piped
 
     import os
     token = args.token or os.environ.get("AGAP_BRIDGE_TOKEN") or secrets.token_urlsafe(24)
     if len(token) < 16:
         sys.exit("token must be at least 16 characters")
 
-    link = SimLink(fretboard=args.fretboard) if args.simulate else SerialLink(args.port)
+    if args.sim_exe:
+        link = ProcessLink([str(args.sim_exe), "--speed", "1"])
+    else:
+        link = SimLink(fretboard=args.fretboard) if args.simulate else SerialLink(args.port)
     buttons = [] if args.fretboard else load_buttons(args.map)
     bridge = Bridge(link, buttons, Config(args.allow_calib, args.allow_unconfirmed, args.fretboard))
     bridge.start()
-    server = make_server(bridge, token, args.host, args.http_port)
+    try:
+        server = make_server(bridge, token, args.host, args.http_port)
+    except OSError as e:
+        bridge.shutdown()
+        sys.exit("Cannot listen on %s port %d (%s). Something else is probably using it. "
+                 "Pick another port with --http-port, for example --http-port %d."
+                 % (args.host, args.http_port, e.strerror or e, args.http_port + 1))
 
-    print(f"AGAP bridge on http://{args.host}:{args.http_port}  ({'SIMULATED' if args.simulate else args.port})")
+    where = "REAL FIRMWARE ON THIS PC (no hardware)" if args.sim_exe else ("SIMULATED" if args.simulate else args.port)
+    print(f"AGAP bridge on http://{args.host}:{args.http_port}  ({where})")
     print(f"Token: {token}")
     if args.host not in ("127.0.0.1", "localhost"):
         print("WARNING: listening beyond localhost with no TLS. Put it behind a VPN/tunnel.")

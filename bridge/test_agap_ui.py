@@ -215,6 +215,44 @@ class TestPageSource(unittest.TestCase):
         self.assertFalse(sent & {"calib", "press"}, sent)
 
 
+class TestPortInUse(unittest.TestCase):
+    def test_a_busy_port_gives_advice_not_a_traceback(self):
+        import socket
+        blocker = socket.socket()
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        port = blocker.getsockname()[1]
+        try:
+            r = subprocess.run([sys.executable, "agap_bridge.py", "--simulate", "--fretboard", "--http-port", str(port)],
+                               cwd=str(ab.HERE), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+        finally:
+            blocker.close()
+        self.assertNotEqual(r.returncode, 0)
+        out = r.stdout + r.stderr
+        self.assertNotIn("Traceback", out)
+        self.assertIn("--http-port", out)
+        self.assertIn(str(port), out)
+
+
+class TestTokenIsShownAtOnce(unittest.TestCase):
+    def test_token_line_appears_immediately_even_when_output_is_piped(self):
+        # Python buffers piped output; a launcher that captures it would not see the token until exit
+        p = subprocess.Popen([sys.executable, "agap_bridge.py", "--simulate", "--fretboard", "--http-port", "0"],
+                             cwd=str(ab.HERE), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        got = []
+        reader = threading.Thread(target=lambda: [got.append(x) for x in iter(p.stdout.readline, "")], daemon=True)
+        reader.start()
+        try:
+            deadline = time.time() + 6
+            while time.time() < deadline and not any(x.startswith("Token:") for x in got):
+                time.sleep(0.05)
+            self.assertTrue(any(x.startswith("Token:") for x in got), "no token within 6 s; got %r" % got)
+        finally:
+            p.kill()
+            p.wait(timeout=5)
+            p.stdout.close()
+
+
 @need_node
 class TestNodeUnitTests(unittest.TestCase):
     def test_the_javascript_unit_tests_pass(self):
