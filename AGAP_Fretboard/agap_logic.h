@@ -80,6 +80,32 @@ struct Tuning {
   uint8_t pickB[6];
 };
 
+// Strict integer parse for command arguments. atoi() reads "abc" as 0 and "12abc"
+// as 12, which turned typos into silent settings. Accepts an optional leading '-'
+// then 1-9 digits and nothing else. Leaves `out` untouched when it returns false.
+inline bool parseInt(const char* s, long& out) {
+  if (!s) return false;
+  const char* p = s;
+  bool neg = false;
+  if (*p == '-') {
+    neg = true;
+    p++;
+  }
+  if (*p == '\0') return false;
+  long v = 0;
+  uint8_t digits = 0;
+  for (; *p; p++) {
+    if (*p < '0' || *p > '9' || ++digits > 9) return false;
+    v = v * 10 + (*p - '0');
+  }
+  out = neg ? -v : v;
+  return true;
+}
+
+// A hold below about 10% would let the plunger go after the kick, so the string
+// would be released while the chord is meant to ring.
+constexpr uint8_t HOLD_DUTY_MIN = 25;
+
 constexpr uint16_t TUNING_MAGIC = 0xA6A9;
 constexpr uint8_t TUNING_VERSION = 1;
 constexpr uint8_t TUNING_BYTES = 21;
@@ -89,6 +115,7 @@ constexpr uint16_t BPM_MIN = 20, BPM_MAX = 200;
 // Forces every field into its allowed range (the same limits the serial
 // commands enforce), so a stored or typed value can't exceed them.
 inline void sanitizeTuning(Tuning& t) {
+  if (t.holdDuty < HOLD_DUTY_MIN) t.holdDuty = HOLD_DUTY_MIN;
   if (t.kickMs < KICK_MS_MIN) t.kickMs = KICK_MS_MIN;
   if (t.kickMs > KICK_MS_MAX) t.kickMs = KICK_MS_MAX;
   if (t.bpm < BPM_MIN) t.bpm = BPM_MIN;
@@ -234,7 +261,12 @@ class ChannelDriver {
           }
           break;
         case ChanState::HOLD:
-          if (now - refresh_[i] >= cmdTimeoutMs_) {
+          // Signed on purpose. A command can re-press a held coil with a clock reading
+          // taken after the one the sketch's loop() passed here, so the refresh time can
+          // be a few ms AHEAD of `now`. Unsigned subtraction would wrap to a huge number
+          // and drop the coil that was just refreshed. (millis() rolling over after ~49
+          // days still works: the difference of two close readings is small either way.)
+          if ((int32_t)(now - refresh_[i]) >= (int32_t)cmdTimeoutMs_) {
             state_[i] = ChanState::OFF;  // safety timeout
             dirty = true;
           }

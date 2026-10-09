@@ -5,6 +5,8 @@ A robot that plays a real guitar. **New here? Read [`docs/SYSTEM_FLOW.md`](docs/
 **The final design fingers chords directly:** five printed plates (one per fret, frets 1-5) hold **30 solenoids**, one per string per fret; the board solves each chord into a fingering and presses only the solenoids it needs (never more than six at once), then six servo picks strum. Firmware, manual and wiring: [`AGAP_Fretboard/`](AGAP_Fretboard/). This repo also keeps the two earlier designs for reference, plus standalone software.
 
 
+**Testing:** `python agap.py selftest` runs every automated test, including the real sketches on a simulated Arduino. What that covers, the bugs it found, and the ordered bench-test checklist for the real robot are in [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md).
+
 ## Quick start (first time with the real board)
 
 ```

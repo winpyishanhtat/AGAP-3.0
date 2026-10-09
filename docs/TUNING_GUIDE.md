@@ -17,7 +17,7 @@ Rules for the whole process:
 | Value | Command | Placeholder | Saved by `SAVE` |
 |---|---|---|---|
 | Kick pulse (ms of full power) | `KICK <ms>` (10-300) | 60 | yes |
-| Hold power (percent) | `HOLD <percent>` (0-100) | 60/255, about 23% | yes |
+| Hold power (percent) | `HOLD <percent>` (10-100) | 60/255, about 23% | yes |
 | Tempo | `TEMPO <bpm>` (20-200) | 50 | yes |
 | Pick arm end angles | `PICK <1-6> <A\|B> <deg>` (10-170) | 70 / 110 | yes |
 | Settle delay before strum | `SETTLE_MS` in the sketch | 15 ms | no, edit and re-flash |

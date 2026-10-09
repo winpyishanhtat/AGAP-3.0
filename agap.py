@@ -837,6 +837,8 @@ def selftest_plan():
         ("Control tool tests (C++)", ROOT / "tools" / "tests", None, "test_agap_control_logic.cpp"),
         ("Fretboard chord search vs ChordAI (C++)", ROOT / "AGAP_Fretboard" / "tests", None, "test_agap_chords.cpp"),
         ("Fretboard channel mapping (C++)", ROOT / "AGAP_Fretboard" / "tests", None, "test_agap_fret.cpp"),
+        ("Fretboard firmware simulation", ROOT / "AGAP_Fretboard" / "sim", None, "sim_fretboard.cpp"),
+        ("Helper firmware simulation", ROOT / "AGAP_HelperButton" / "sim", None, "sim_helper.cpp"),
     ]
     return plan
 
@@ -846,6 +848,35 @@ def cpp_compile_command(gpp, source, out_exe):
     return [gpp, "-std=c++14", "-Wall", "-Wextra", "-I..", source, "-o", str(out_exe)]
 
 
+def sim_compile_command(gpp, source, out_exe):
+    """The real sketch is compiled on this computer against the mock Arduino in sim/mock."""
+    return [gpp, "-std=c++14", "-include", "Arduino.h", "-I../../sim/mock", "-I..", source, "-o", str(out_exe)]
+
+
+def run_sim(cwd, source, gpp, run):
+    """Runs every scenario of a firmware simulation, each in its own process (each needs a fresh
+    power-up). Returns (passed, summary line, full output) like run_suite."""
+    if not gpp:
+        return None, "skipped (g++ not found)", ""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        exe = Path(tmp) / "sim.exe"
+        c = run(sim_compile_command(gpp, source, exe))
+        if c.returncode != 0:
+            return False, "did not compile", c.stdout
+        names = [n.strip() for n in run([str(exe), "--list"]).stdout.splitlines() if n.strip()]
+        failed, log = [], []
+        for n in names:
+            r = run([str(exe), n])
+            if r.returncode != 0:
+                failed.append(n)
+                log.append(r.stdout)
+        summary = "%d/%d scenarios passed" % (len(names) - len(failed), len(names))
+        if failed:
+            summary += " (failed: %s)" % ", ".join(failed)
+        return not failed, summary, "\n".join(log)
+
+
 def run_suite(name, cwd, module, cpp_src, gpp):
     """Returns (passed, last line, full output). Calls g++ directly: on Windows
     `bash` on PATH is often the WSL stub, which fails without a Linux install."""
@@ -853,6 +884,8 @@ def run_suite(name, cwd, module, cpp_src, gpp):
     if module:
         r = run([sys.executable, "-m", "unittest", module])
         out = r.stdout
+    elif cpp_src.startswith("sim_"):
+        return run_sim(cwd, cpp_src, gpp, run)
     else:
         if not gpp:
             return None, "skipped (g++ not found)", ""

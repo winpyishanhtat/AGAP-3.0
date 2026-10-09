@@ -106,6 +106,11 @@ uint8_t pickA[6] = {70, 70, 70, 70, 70, 70};       // TBD: calibrate per string
 uint8_t pickB[6] = {110, 110, 110, 110, 110, 110};
 
 enum { BTN_STRUM, BTN_NEXT, BTN_PREV, BTN_STOP, NUM_CTRL_BTN };
+
+// Result of feeding one received byte to the line reader (feedLine, below). Declared up
+// here because the Arduino builder inserts function prototypes before the first function,
+// so any type those prototypes mention must already exist.
+enum LineResult : uint8_t { LINE_NONE, LINE_READY, LINE_TOO_LONG };
 const uint8_t CTRL_BTN_PIN[NUM_CTRL_BTN] = {A0, A1, A2, A3};
 
 // ========================= Driver (kick-and-hold PWM) =========================
@@ -210,7 +215,7 @@ void printHelp(Stream& o) {
   o.println(F("PLUCK <1-6>              swing one pick to its other side (calibration)"));
   o.println(F("PICKS                    list every pick's A/B angles"));
   o.println(F("SAVE | LOAD | DEFAULTS   keep tuning across power-off / reload it / go back to compiled values"));
-  o.println(F("TEMPO <bpm>   KICK <ms>   HOLD <percent>   LABELS   STATUS   STOP"));
+  o.println(F("TEMPO <bpm 20-200>   KICK <ms 10-300>   HOLD <percent 10-100>   LABELS   STATUS   STOP   (no argument = just report)"));
 }
 
 void printLabels(Stream& o) {
@@ -264,6 +269,41 @@ bool writeSavedTuning(const agap::Tuning& t) {
 
 char    lineBuf[96];
 uint8_t lineLen = 0;
+bool    lineOverflow = false;
+
+// Feeds one received byte into lineBuf. LINE_READY: a complete line is in lineBuf
+// (NUL-terminated, length lineLen) and the CALLER must take it and set lineLen = 0.
+// LINE_TOO_LONG: the line did not fit and has been discarded whole, so a long line is
+// refused instead of its first 95 characters being run as a different command.
+LineResult feedLine(char c) {
+  if (c == '\r') return LINE_NONE;
+  if (c == '\n') {
+    bool over = lineOverflow;
+    lineOverflow = false;
+    if (over) { lineLen = 0; return LINE_TOO_LONG; }
+    lineBuf[lineLen] = '\0';
+    return lineLen ? LINE_READY : LINE_NONE;
+  }
+  if (lineLen < sizeof(lineBuf) - 1) lineBuf[lineLen++] = c;
+  else lineOverflow = true;
+  return LINE_NONE;
+}
+
+// Strict number parsing for command arguments (atoi() turned typos into silent settings).
+bool num(const char* tok, long& out) { return agap::parseInt(tok, out); }
+
+// An optional numeric argument clamped into [lo, hi]. No argument = report only (value untouched).
+// Returns false (after printing the error) when the argument is not a number.
+bool optionalNumber(const char* cmd, const char* tok, long lo, long hi, long& value, Stream& out) {
+  if (!tok) return true;
+  long v;
+  if (!num(tok, v)) {
+    out.print(F("ERR ")); out.print(cmd); out.println(F(" needs a number"));
+    return false;
+  }
+  value = constrain(v, lo, hi);
+  return true;
+}
 
 // SEQUENCE and CALIB below block inside their own loop for seconds at a
 // time (that's the point - they drive real hardware on a timed schedule).
@@ -276,21 +316,27 @@ bool abortRequested = false;
 bool checkAbort() {
   if (digitalRead(CTRL_BTN_PIN[BTN_STOP]) == LOW) abortRequested = true;
   while (Serial.available()) {
-    char c = Serial.read();
-    if (c == '\r') continue;
-    if (c == '\n') {
-      lineBuf[lineLen] = '\0';
-      if (lineLen && eq(lineBuf, "STOP")) abortRequested = true;
-      else if (lineLen) { Serial.print(F("BUSY, ignored: ")); Serial.println(lineBuf); }
+    LineResult r = feedLine((char)Serial.read());
+    if (r == LINE_READY) {
+      if (eq(lineBuf, "STOP")) abortRequested = true;
+      else { Serial.print(F("BUSY, ignored: ")); Serial.println(lineBuf); }
       lineLen = 0;
-    } else if (lineLen < sizeof(lineBuf) - 1) {
-      lineBuf[lineLen++] = c;
+    } else if (r == LINE_TOO_LONG) {
+      Serial.println(F("BUSY, ignored: line too long"));
     }
   }
   return abortRequested;
 }
 
 void handleSequence(char* rest, Stream& out) {
+  // Check every label before moving anything, so a typo late in the list cannot leave the
+  // first buttons pressed with nothing following.
+  char check[96];
+  strncpy(check, rest, sizeof(check) - 1);
+  check[sizeof(check) - 1] = '\0';
+  for (char* tok = strtok(check, " 	"); tok; tok = strtok(NULL, " 	")) {
+    if (findButton(tok) < 0) { out.print(F("ERR unknown label ")); out.println(tok); return; }
+  }
   const uint32_t beat = 60000UL / bpm;
   uint8_t n = 0;
   abortRequested = false;
@@ -353,17 +399,19 @@ void handleCommand(char* line, Stream& out) {
     char* b = strtok(NULL, " \t");
     char* c = strtok(NULL, " \t");
     int8_t i = label ? findButton(label) : -1;
-    if (i < 0 || !a || !b) { out.println(F("ERR CALIB <label> <holdMs> <repeats> [gapMs]")); return; }
-    uint16_t holdMs = atoi(a);
-    uint8_t  reps   = atoi(b);
-    uint16_t gapMs  = c ? atoi(c) : 400;
+    // Limits, not clamps: a typo must not quietly become a different, possibly long, test.
+    // The hold stays below CMD_TIMEOUT_MS so the safety timeout cannot cut a hold short.
+    long holdMs = 0, reps = 0, gapMs = 400;
+    bool ok = i >= 0 && num(a, holdMs) && num(b, reps) && (!c || num(c, gapMs));
+    ok = ok && holdMs >= 10 && holdMs <= 7000 && reps >= 1 && reps <= 100 && gapMs >= 0 && gapMs <= 10000;
+    if (!ok) { out.println(F("ERR CALIB <label> <holdMs 10-7000> <repeats 1-100> [gapMs 0-10000]")); return; }
     out.print(F("CALIB ")); out.print(BUTTON_LABEL[i]);
     out.print(F(" x")); out.println(reps);
     abortRequested = false;
-    for (uint8_t r = 0; r < reps; r++) {
+    for (uint8_t r = 0; r < (uint8_t)reps; r++) {
       pressOne(i);
       uint32_t t0 = millis();
-      while (millis() - t0 < holdMs) {
+      while (millis() - t0 < (uint32_t)holdMs) {
         updateChannels(millis());
         if (checkAbort()) { releaseAll(); out.println(F("ABORTED (STOP)")); return; }
       }
@@ -371,7 +419,7 @@ void handleCommand(char* line, Stream& out) {
       pushMasks();
       out.print(F("  rep ")); out.print(r + 1); out.println(F(" done"));
       uint32_t t1 = millis();
-      while (millis() - t1 < gapMs) {
+      while (millis() - t1 < (uint32_t)gapMs) {
         updateChannels(millis());
         if (checkAbort()) { releaseAll(); out.println(F("ABORTED (STOP)")); return; }
       }
@@ -382,20 +430,22 @@ void handleCommand(char* line, Stream& out) {
     char* n = strtok(NULL, " 	");
     char* side = strtok(NULL, " 	");
     char* ang = strtok(NULL, " 	");
-    int8_t s = n ? agap::stringToServoIndex(atoi(n)) : -1;
-    bool isA = side && (side[0] == 'A' || side[0] == 'a');
-    bool isB = side && (side[0] == 'B' || side[0] == 'b');
-    if (s < 0 || !(isA || isB) || !ang) { out.println(F("ERR PICK <1-6> <A|B> <angle>")); return; }
-    uint8_t angle = agap::clampPickAngle(atoi(ang));
+    long sn = 0, deg = 0;
+    int8_t s = num(n, sn) ? agap::stringToServoIndex((int)sn) : (int8_t)-1;
+    bool isA = side && (side[0] == 'A' || side[0] == 'a') && side[1] == '\0';
+    bool isB = side && (side[0] == 'B' || side[0] == 'b') && side[1] == '\0';
+    if (s < 0 || !(isA || isB) || !num(ang, deg)) { out.println(F("ERR PICK <1-6> <A|B> <angle>")); return; }
+    uint8_t angle = agap::clampPickAngle((int)deg);
     if (isA) pickA[s] = angle; else pickB[s] = angle;
     if (isA != pickAtB[s]) picks[s].write(angle);  // arm is on that side now: move it so you can see the change
-    out.print(F("PICK ")); out.print(atoi(n)); out.print(isA ? F(" A=") : F(" B=")); out.println(angle);
+    out.print(F("PICK ")); out.print(6 - s); out.print(isA ? F(" A=") : F(" B=")); out.println(angle);
   } else if (eq(cmd, "PLUCK")) {
     char* n = strtok(NULL, " 	");
-    int8_t s = n ? agap::stringToServoIndex(atoi(n)) : -1;
+    long sn = 0;
+    int8_t s = num(n, sn) ? agap::stringToServoIndex((int)sn) : (int8_t)-1;
     if (s < 0) { out.println(F("ERR PLUCK <1-6>")); return; }
     pluck((uint8_t)s);
-    out.print(F("PLUCKED ")); out.println(atoi(n));
+    out.print(F("PLUCKED ")); out.println(6 - s);
   } else if (eq(cmd, "PICKS")) {
     for (uint8_t i = 0; i < 6; i++) {
       out.print(F("string ")); out.print(6 - i);
@@ -403,17 +453,21 @@ void handleCommand(char* line, Stream& out) {
       out.print(F("  B=")); out.println(pickB[i]);
     }
   } else if (eq(cmd, "TEMPO")) {
-    char* a = strtok(NULL, " \t");
-    bpm = constrain(a ? atoi(a) : bpm, agap::BPM_MIN, agap::BPM_MAX);
+    long v = bpm;
+    if (!optionalNumber("TEMPO", strtok(NULL, " \t"), agap::BPM_MIN, agap::BPM_MAX, v, out)) return;
+    bpm = (uint16_t)v;
     out.print(F("TEMPO ")); out.println(bpm);
   } else if (eq(cmd, "KICK")) {
-    char* a = strtok(NULL, " \t");
-    kickMs = constrain(a ? atoi(a) : kickMs, agap::KICK_MS_MIN, agap::KICK_MS_MAX);
+    long v = kickMs;
+    if (!optionalNumber("KICK", strtok(NULL, " \t"), agap::KICK_MS_MIN, agap::KICK_MS_MAX, v, out)) return;
+    kickMs = (uint16_t)v;
     channels.setKickMs(kickMs);
     out.print(F("KICK ms ")); out.println(kickMs);
   } else if (eq(cmd, "HOLD")) {
-    char* a = strtok(NULL, " \t");
-    holdDuty = (uint16_t)constrain(a ? atoi(a) : 30, 0, 100) * 255 / 100;
+    // Percent, 10-100: below 10 the plunger would let go right after the kick. No argument just reports.
+    long pct = (long)holdDuty * 100 / 255;
+    if (!optionalNumber("HOLD", strtok(NULL, " \t"), 10, 100, pct, out)) return;
+    if (pct != (long)holdDuty * 100 / 255) holdDuty = (uint8_t)(pct * 255 / 100);  // unchanged if only reporting
     OCR2A = holdDuty;
     out.print(F("HOLD duty ")); out.println(holdDuty);
   } else if (eq(cmd, "SAVE")) {
@@ -481,14 +535,18 @@ void pollButtons(uint32_t now) {
 
 void pollSerial() {
   while (Serial.available()) {
-    char c = Serial.read();
-    if (c == '\r') continue;
-    if (c == '\n') {
-      lineBuf[lineLen] = '\0';
-      if (lineLen) dispatch(lineBuf, Serial);
+    LineResult r = feedLine((char)Serial.read());
+    if (r == LINE_TOO_LONG) {
+      Serial.println(F("ERR line too long"));
+    } else if (r == LINE_READY) {
+      // Copy the command out and free lineBuf BEFORE running it. SEQUENCE and CALIB read
+      // the serial port while they run (to catch STOP) and use lineBuf to do it; if the
+      // command were still sitting in it, the incoming STOP would be glued onto the end of
+      // it and never recognised, and it would corrupt the command being executed.
+      char cmd[sizeof(lineBuf)];
+      memcpy(cmd, lineBuf, lineLen + 1);
       lineLen = 0;
-    } else if (lineLen < sizeof(lineBuf) - 1) {
-      lineBuf[lineLen++] = c;
+      dispatch(cmd, Serial);
     }
   }
 }

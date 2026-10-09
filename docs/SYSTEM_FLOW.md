@@ -92,7 +92,7 @@ pick a *good* shape rather than to avoid a hard one.
 | `bridge/` | Remote-control bridge and phone page (see its README for what it supports) |
 | `ChordAI/` | Chord simplifier (Python, plus the browser version in `web/`) |
 | `agap.py` | Launcher: doctor, bring-up, console, flash, selftest |
-| `docs/` | Hardware measurements, tuning guide, this overview |
+| `docs/` | Hardware measurements, tuning guide, test plan and report, this overview |
 | `.github/workflows/` | CI that runs every test and compiles the sketches; Pages deploy |
 | `README_AGAP.md` | Design status and the bench steps still to do |
 

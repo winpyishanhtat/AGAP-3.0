@@ -523,6 +523,27 @@ class TestFretboardTables(unittest.TestCase):
         names = [n for n, _, _, _ in agap.selftest_plan()]
         self.assertTrue(any("Fretboard" in n for n in names))
         self.assertTrue(any("STL" in n for n in names))
+        self.assertTrue(any("simulation" in n for n in names))
+
+    def test_every_command_the_fretboard_readme_names_exists_in_the_firmware(self):
+        readme = (ROOT / "AGAP_Fretboard" / "README.md").read_text(encoding="utf-8")
+        sketch = (ROOT / "AGAP_Fretboard" / "AGAP_Fretboard.ino").read_text(encoding="utf-8")
+        in_table = readme.split("## Commands")[1].split("## Wiring")[0]
+        words = set()
+        for cell in re.findall(r"^\| `([^|]+)` \|", in_table, re.M):
+            for part in re.split(r"[,/]| \| ", cell.replace("\\|", "|")):
+                m = re.match(r"\s*([A-Z]{3,})\b", part.strip().strip("`"))
+                if m:
+                    words.add(m.group(1))
+        self.assertGreater(len(words), 15)
+        for w in sorted(words):
+            self.assertTrue('eq(cmd, "%s")' % w in sketch or 'eq(a, "%s")' % w in sketch,
+                            "README mentions %s but the sketch has no such command" % w)
+
+    def test_every_simulation_scenario_has_a_runner(self):
+        for folder in ("AGAP_Fretboard", "AGAP_HelperButton"):
+            self.assertTrue((ROOT / folder / "sim" / "run_tests.sh").is_file(), folder)
+        self.assertTrue((ROOT / "sim" / "mock" / "Arduino.h").is_file())
 
 
 class TestFlashAndRepo(unittest.TestCase):

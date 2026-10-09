@@ -260,6 +260,84 @@ void test_strum_default_mask_is_all_six() {
   CHECK_EQ(plucks, 6);
 }
 
+// --------------------------- found by running the real firmware (sim/) ---------------------------
+
+void test_refreshing_a_held_coil_in_the_same_loop_does_not_time_it_out() {
+  // loop() reads the clock once at the top, then a command re-presses a held coil with a
+  // LATER clock reading, then update() runs with the earlier value. The refresh time is
+  // then ahead of "now"; that must not wrap around and trip the 8 s safety timeout.
+  ChannelDriver<10> d(60, 8000);
+  d.press(0, 0, 0);
+  d.update(0);
+  d.update(60);  // HOLD
+  CHECK(d.stateOf(0) == ChanState::HOLD);
+  d.press(0, 110, /*now=*/110);  // re-press, refresh stamped at 110
+  d.update(100);                 // but the update clock is still 100
+  CHECK(d.stateOf(0) == ChanState::HOLD);
+  d.update(105);
+  CHECK(d.stateOf(0) == ChanState::HOLD);
+}
+
+void test_hold_timeout_still_fires_after_a_refresh_ahead_of_the_clock() {
+  ChannelDriver<10> d(60, 8000);
+  d.press(0, 0, 0);
+  d.update(0);
+  d.update(60);
+  d.press(0, 110, 110);
+  d.update(100);
+  d.update(110 + 7999);
+  CHECK(d.stateOf(0) == ChanState::HOLD);
+  d.update(110 + 8000);
+  CHECK(d.stateOf(0) == ChanState::OFF);
+}
+
+void test_hold_timeout_works_across_the_32_bit_clock_wrap() {
+  // millis() wraps after about 49 days; elapsed time must still be measured correctly.
+  ChannelDriver<10> d(60, 8000);
+  const uint32_t t0 = 0xFFFFFF00u;
+  d.press(0, t0, t0);
+  d.update(t0);
+  d.update(t0 + 60);
+  CHECK(d.stateOf(0) == ChanState::HOLD);
+  d.update(t0 + 7999);  // wrapped past zero, 7999 ms later
+  CHECK(d.stateOf(0) == ChanState::HOLD);
+  d.update(t0 + 8000);
+  CHECK(d.stateOf(0) == ChanState::OFF);
+}
+
+void test_parseInt_accepts_only_plain_integers() {
+  long v = -1;
+  CHECK(parseInt("0", v) && v == 0);
+  CHECK(parseInt("60", v) && v == 60);
+  CHECK(parseInt("-5", v) && v == -5);
+  CHECK(parseInt("999999999", v) && v == 999999999);
+  v = 42;
+  const char* bad[] = {"", "-", "abc", "12abc", "1.5", " 7", "7 ", "+3", "--1", "1000000000", "99999999999", "0x10", "1e3"};
+  for (const char* b : bad) {
+    CHECK(!parseInt(b, v));
+    CHECK_EQ(v, 42);  // a rejected value is never written
+  }
+  CHECK(!parseInt(nullptr, v));
+}
+
+void test_tuning_hold_has_a_floor() {
+  Tuning t = sampleTuning();
+  t.holdDuty = 0;
+  sanitizeTuning(t);
+  CHECK(t.holdDuty >= HOLD_DUTY_MIN);
+  uint8_t buf[TUNING_BYTES];
+  Tuning zero = sampleTuning();
+  zero.holdDuty = 3;
+  encodeTuning(zero, buf);
+  Tuning got{};
+  CHECK(decodeTuning(buf, got));
+  CHECK(got.holdDuty >= HOLD_DUTY_MIN);
+  Tuning high = sampleTuning();
+  high.holdDuty = 255;
+  sanitizeTuning(high);
+  CHECK_EQ(high.holdDuty, 255);
+}
+
 // --------------------------- ChannelDriver ---------------------------
 
 void test_channel_starts_off() {
@@ -495,6 +573,12 @@ int main() {
   RUN(test_strum_mask_skips_unplayed_strings_without_waiting);
   RUN(test_strum_mask_up_direction_and_empty_mask);
   RUN(test_strum_default_mask_is_all_six);
+
+  RUN(test_refreshing_a_held_coil_in_the_same_loop_does_not_time_it_out);
+  RUN(test_hold_timeout_still_fires_after_a_refresh_ahead_of_the_clock);
+  RUN(test_hold_timeout_works_across_the_32_bit_clock_wrap);
+  RUN(test_parseInt_accepts_only_plain_integers);
+  RUN(test_tuning_hold_has_a_floor);
 
   RUN(test_channel_starts_off);
   RUN(test_channel_press_then_update_goes_pending_then_kick);

@@ -36,6 +36,16 @@ jobs:
           python-version: "3.11"
       - run: bash AGAP_Fretboard/tests/run_tests.sh
 
+  firmware-simulation:
+    name: Real sketches run on a mock Arduino (g++)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fretboard firmware, scenarios and fuzz
+        run: bash AGAP_Fretboard/sim/run_tests.sh
+      - name: Helper-button firmware, scenarios and fuzz
+        run: bash AGAP_HelperButton/sim/run_tests.sh
+
   launcher-tests:
     name: Launcher tests (Python)
     runs-on: ubuntu-latest

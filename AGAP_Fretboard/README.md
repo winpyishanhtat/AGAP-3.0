@@ -48,7 +48,7 @@ root for a menu that does the same.
 | `STRUM [D\|U]` | Strum the sounding strings of the current fingering |
 | `PROG C G Am F`, `NEXT`, `PREV` | A progression (max 12), stepped by the panel buttons |
 | `SEQUENCE C G Am F` | Play chords in turn at `TEMPO` |
-| `CALIB <string> <fret> <holdMs> <reps> [gapMs]` | Repeated press test for one solenoid |
+| `CALIB <string> <fret> <holdMs> <reps> [gapMs]` | Repeated press test for one solenoid (hold 10-7000 ms, 1-100 repeats, gap 0-10000 ms; out-of-range is refused, never wrapped) |
 | `PICK`, `PLUCK`, `PICKS` | Pick-arm tuning ([`../docs/TUNING_GUIDE.md`](../docs/TUNING_GUIDE.md)) |
 | `KICK`, `HOLD`, `TEMPO`, `SAVE`, `LOAD`, `DEFAULTS` | Timing and saved tuning (EEPROM) |
 | `FRETS`, `STATUS`, `VERSION`, `PING`, `STOP`, `HELP` | Info and the stop |

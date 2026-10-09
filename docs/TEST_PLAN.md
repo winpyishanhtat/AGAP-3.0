@@ -1,0 +1,100 @@
+# AGAP test plan and test report
+
+Two phases. Phase 1 is automated and runs on a PC with no hardware; it has been
+done and is summarised below, with the bugs it found. Phase 2 needs the real
+robot and has **not been started**: it is written as an ordered checklist with
+pass criteria and a log sheet.
+
+## Phase 1: automated testing (done)
+
+Run everything: `python agap.py selftest` (or `python agap.py` and pick "Run all
+tests"). CI runs the same suites on every push.
+
+| Layer | What it checks | Count |
+|---|---|---|
+| Logic unit tests (C++) | Channel state machine, masks, six-coil limit, strum order and muting, saved-tuning encoding, strict number parsing | 232 checks (shared logic) + 256 (fretboard mapping) |
+| Chord search vs ChordAI | The C++ search on the board gives the same fingering and cost as `ChordAI/chord_ai.py`, for every root and quality, at 3 and 5 frets, plus chord-name parsing | 704 checks (528 solves, 38 name parses) |
+| **Firmware simulation** | The **real sketches** (`AGAP_Fretboard.ino`, `AGAP_HelperButton.ino`) compiled on the PC against a mock Arduino: serial, clock, ports, EEPROM, servos, buttons. Scripted scenarios plus random-command fuzzing, with safety rules checked on every simulated millisecond | Fretboard 31 scenarios (fuzz: 4,000 commands); helper 12 (fuzz: 3,000) |
+| ChordAI | Python solver; the JavaScript on the web page matches it | 26 tests + 572 parity checks |
+| Launcher, bridge | Doctor, bring-up, console, flash command, remote bridge (auth, injection attempts, limits, STOP priority) | 64 + 40 tests |
+| Part measuring | G-code / STL / SVG inspectors, fit checker, deck drawing | 4 suites |
+| Both sketches compile for the Mega 2560 | `arduino-cli` (also in CI) | 3 sketches |
+
+**Safety rules the simulation enforces on every simulated millisecond** (including
+inside the blocking `SEQUENCE` and `CALIB` loops): never more than 6 coils on at once
+(fretboard); a kicking coil is always also marked on; no channel beyond 29 and
+none of the unused PORTK pins is ever driven. After 4,000 random commands (valid,
+invalid, garbage bytes, over-long lines, STOP presses at random moments) the board
+must still accept and play a chord.
+
+### What Phase 1 cannot show
+
+The simulation runs the sketches' logic, not the hardware. It does **not** reproduce:
+
+- the AVR's speed (the chord search time on the Mega is an estimate, not measured),
+- real interrupt timing or PWM electrical behaviour,
+- the solenoids, drivers, supply, heat, or any mechanical fit,
+- the real servos or the sound of a chord,
+- the USB serial link to a real computer.
+
+That is what Phase 2 is for.
+
+### Bugs found and fixed in Phase 1
+
+Every one is guarded by a test that fails without the fix (checked by putting the bug back).
+
+| # | Bug | Found by | Effect | Fix |
+|---|---|---|---|---|
+| 1 | **A serial `STOP` sent during `SEQUENCE` or `CALIB` was never seen.** The command was still in the shared line buffer, so the incoming STOP was glued onto its end and the command's own text was corrupted | Firmware simulation | The remote/serial stop did not work mid-run; only the panel button did (both sketches) | The command is copied out and the buffer freed before it runs |
+| 2 | **Re-pressing a held coil released it immediately.** `loop()` reads the clock once, a command re-pressed the coil with a later reading, and the unsigned `now - refresh` wrapped to a huge number so the 8 s safety timeout fired at once | Firmware simulation | A chord change that shares a fingering with the previous one dropped the shared solenoids (a chord with missing notes); same in the helper build | Signed elapsed time; also tested across the 49-day clock wrap |
+| 3 | **`CALIB` counts wrapped silently**: 300 repeats ran as 44, `-5` ran as 251 (about 6 minutes), 70000 ms became 4464 | Firmware simulation | A typo could exercise a coil for minutes | Strict limits: hold 10-7000 ms, repeats 1-100, gap 0-10000 ms; out-of-range is an error |
+| 4 | **Non-numeric arguments were accepted**: `KICK abc` set a 10 ms kick, `TEMPO fast` set 20 bpm, `PICK 6 A x` set angle 10 | Firmware simulation | Silent bad settings | Strict number parsing; a non-number is an error and changes nothing |
+| 5 | **`HOLD` with no argument reset the hold to 30%**, and `HOLD 0` let go of the string right after the kick | Firmware simulation | A query changed a setting; a 0% hold fails to hold | `HOLD` alone reports; the range is 10-100%, also enforced on saved tuning |
+| 6 | **An over-long line was cut at 95 characters and the stub executed** | Firmware simulation | A long line could run as a different command than typed | The whole line is refused (`ERR line too long`) |
+| 7 | **`PROG` with more than 12 chords was silently cut to 12** | Firmware simulation | Surprising | Refused with an error, progression unchanged |
+| 8 | **Helper build: `SEQUENCE` moved the first buttons before noticing a bad label later in the list** | Firmware simulation | Buttons left pressed | The whole list is checked first (the fretboard already did this) |
+| 9 | `CM7` parsed as C minor 7 and `CM` as C minor (chord names matched case-insensitively) | Code review during the fretboard port | Wrong chords from the Python tool and the web page | Exact spelling first; bare capital `M` rejected |
+| 10 | `KICK` changed a printed number but not the real kick time (an earlier refactor copied the value once) | Fine-tuning review | The pulse could not be tuned | `setKickMs`, with a test |
+| 11 | The fretboard doctor check expected the 3-fret answer for Bm, so it would fail on a healthy board | Self-review | False alarm on first power-up | Expects the 5-fret answer; pinned in the C++ test |
+| 12 | A sketch-defined type used before the first function broke the real Arduino build though the PC build passed | Compiling for the board | Sketch did not build | Type declared above the first function |
+
+## Phase 2: bench testing on the real hardware (not started)
+
+Work down the list in order; stop at the first failure and fix it before going on.
+Record each result in [`bench_test_log.csv`](bench_test_log.csv). Keep failures too.
+The pass criteria marked *(unmeasured)* depend on figures nobody has yet (solenoid
+datasheet, real gap to the string); fill them in from your first measurements.
+
+| ID | Test | How | Pass when |
+|---|---|---|---|
+| B0 | Power-off checks | Multimeter on every driver: coil polarity, flyback diode direction, grounds common, no short between 12 V and ground | All correct before any power |
+| B1 | Fit coupon | Print `00-PRINT-FIRST-solenoid-fit-coupon`; put the solenoid in | Body fits the 7.5 x 10.5 mm pocket, plunger moves freely through the 4.8 mm hole |
+| B2 | Connection | `python agap.py doctor` | No `[FAIL]` lines (it moves nothing) |
+| B3 | Pick arms | `python agap.py bringup`, pick step; `PICKS`, `PLUCK 6`... | Each of the 6 arms swings across **its own** string on both sides without touching the next; note which pod serves which string |
+| B4 | One solenoid | Bring-up step 3 (`PRESS 6 1`) | It clicks and releases cleanly; **no heat** |
+| B5 | Endurance | `CALIB 6 1 1000 5 800` | 5/5 presses seat; coil and driver stay cool enough to hold a finger on for 5 s |
+| B6 | All 30 channels | Bring-up "test the other 29" | Each socket's solenoid moves; the string order matches (fix wrong order by swapping wires) |
+| B7 | Kick tuning | `docs/TUNING_GUIDE.md` step 2 | Smallest `KICK` that seats the plunger on every try, plus margin |
+| B8 | Hold tuning | Guide step 3 | Lowest `HOLD` that keeps the string pressed through the longest hold; no creep, not hot |
+| B9 | Six coils at once | `CHORD` of a 5-6 coil shape (e.g. `F`), measure the 12 V rail at the supply and at the drivers | Rail does not sag below the solenoid's working voltage *(unmeasured)*; supply stays cool |
+| B10 | Chord shapes | `CHORD` each of C D E F G A B Am Dm Em Bm, then strum | Every string that should ring does, no buzz from a half-pressed fret |
+| B11 | Mute handling | A chord with a muted string (`C`) | The muted string's pick does not swing |
+| B12 | Chord change | `SEQUENCE C G Am F` at several tempos; raise `TEMPO` until it fails | The tempo where changes start to sound late or muted is recorded as the limit |
+| B13 | Serial STOP | `SEQUENCE` running, send `STOP` | Everything releases within about a beat; the board accepts the next command |
+| B14 | Panel STOP | `SEQUENCE` running, press the panel STOP button | Same |
+| B15 | Auto-release | `PRESS 6 1`, do nothing for 8 s | Releases itself at about 8 s |
+| B16 | Saved tuning | `KICK`/`HOLD` changed, `SAVE`, power-cycle | Values come back (the boot banner says "Loaded saved tuning"); check after re-flashing too |
+| B17 | USB unplug | Pull the USB cable mid-hold | Everything releases within 8 s (the board has no other way to know) |
+| B18 | Search time | `SHOW D9` (the slowest chord), time the reply | Reply in well under a second (estimate: about 0.1 s); record the real figure |
+| B19 | Remote bridge | `python agap.py bridge`, drive it from a phone on the same network | Chord plays; STOP stops it; a wrong token is refused |
+| B20 | Soak | `SEQUENCE C G Am F` repeating for 30 minutes | No missed chords, no drift, nothing hot; supply and drivers stay cool |
+
+## How to add a test
+
+- Logic that does not touch pins: add to `AGAP_HelperButton/tests/test_agap_logic.cpp`
+  or `AGAP_Fretboard/tests/`.
+- Anything about command handling, timing, STOP, tuning: add a scenario to
+  `AGAP_Fretboard/sim/sim_fretboard.cpp` (or `AGAP_HelperButton/sim/sim_helper.cpp`).
+  Write the failing scenario first.
+- If a bug is found on the real board, **reproduce it in a simulation scenario first**
+  where possible, then fix it, then add a row to the table above.
