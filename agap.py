@@ -38,14 +38,43 @@ LOG_DIR = ROOT / "logs"
 MAP_PATH = ROOT / "AGAP_HelperButton" / "button_map.json"
 BAUD = 115200
 FQBN = "arduino:avr:mega"
-SKETCH = ROOT / "AGAP_HelperButton"
+SKETCHES = {"fretboard": ROOT / "AGAP_Fretboard", "helper": ROOT / "AGAP_HelperButton"}
+SKETCH = SKETCHES["fretboard"]  # the final design; "helper" is the earlier chord-helper build
 FW_NAME = "AGAP-helper-button"
+FRET_FW_NAME = "AGAP-fretboard"
 FIRST_WAIT = 1.0   # seconds to wait for the first reply line
 QUIET = 0.4        # then until the board has been silent this long
 
 # Mega pins for button channels 0-9 and servos for strings 6..1. These mirror
 # the pin-map comment at the top of AGAP_HelperButton.ino (a test checks it).
 CHANNEL_PINS = ["D22", "D23", "D24", "D25", "D26", "D27", "D28", "D29", "D37", "D36"]
+
+
+def fret_channel(string_number, fret):
+    """Solenoid channel for a string (1 = high e ... 6 = low E) and fret 1-5.
+    One plate (one fret) owns six consecutive channels; see AGAP_Fretboard/agap_fret.h."""
+    return (fret - 1) * 6 + (6 - string_number)
+
+
+def fret_channel_pin(channel):
+    """The Mega pin for a fretboard channel (PORTA, PORTC, PORTL, then PORTK)."""
+    if channel < 8:
+        return "D%d" % (22 + channel)
+    if channel < 16:
+        return "D%d" % (37 - (channel - 8))
+    if channel < 24:
+        return "D%d" % (49 - (channel - 16))
+    return "A%d" % (8 + channel - 24)
+
+
+def firmware_kind(lines):
+    """'fretboard', 'helper', or None, from what a board printed."""
+    text = " ".join(lines)
+    if FRET_FW_NAME in text or "(fretboard)" in text:
+        return "fretboard"
+    if FW_NAME in text or "(helper-button)" in text:
+        return "helper"
+    return None
 
 
 def servo_pin(string_number):
@@ -270,7 +299,7 @@ def diagnose(boot_lines, session, buttons):
 
     banner = " ".join(boot_lines)
     ver_lines = session.ask("VERSION")
-    version = next((l for l in ver_lines if FW_NAME in l), None)
+    version = next((l for l in ver_lines if FW_NAME in l or FRET_FW_NAME in l), None)
     is_agap = ("AGAP" in banner) or version is not None
 
     if not boot_lines and not ver_lines:
@@ -283,6 +312,9 @@ def diagnose(boot_lines, session, buttons):
             "The board answers but is not running the AGAP firmware. Flash it with `python agap.py flash`.")
         return checks
     add("ok", "Board reply", "The AGAP firmware is answering.", "")
+
+    if firmware_kind(boot_lines + ver_lines) == "fretboard":
+        return checks + diagnose_fretboard(banner, ver_lines, version, session)
 
     if version:
         add("ok", "Firmware version", version, "")
@@ -323,6 +355,48 @@ def diagnose(boot_lines, session, buttons):
     return checks
 
 
+def diagnose_fretboard(banner, ver_lines, version, session):
+    """Read-only checks for the 30-solenoid fretboard firmware. Sends only
+    VERSION, FRETS, SHOW, STATUS and PICKS, none of which moves anything."""
+    checks = []
+    add = lambda *a: checks.append(Check(*a))
+
+    add("ok", "Firmware version", version or "VERSION answered", "")
+
+    frets = session.ask("FRETS")
+    if any("30 channels" in l for l in frets):
+        add("ok", "Channels", "6 strings x 5 frets = 30 solenoid channels.", "")
+    else:
+        add("fail", "Channels", "firmware says: %s" % (" | ".join(frets) or "nothing"),
+            "The printed design has 30 solenoids (five six-socket plates). Re-flash `python agap.py flash`.")
+
+    shown = session.ask("SHOW Bm")
+    if any("x 2 0 x 0 2" in l for l in shown):
+        add("ok", "On-board chord search", "Bm gives x 2 0 x 0 2, the known answer.", "")
+    else:
+        add("fail", "On-board chord search", "SHOW Bm gave: %s" % (" | ".join(shown) or "nothing"),
+            "Expected x 2 0 x 0 2. The chord search on the board disagrees with ChordAI; re-flash, "
+            "and if it persists send logs/ to whoever maintains the firmware.")
+
+    status = session.ask("STATUS")
+    if any("bpm=" in l for l in status):
+        add("ok", "Status", " / ".join(status), "")
+    else:
+        add("warn", "Status", "STATUS gave: %s" % (" | ".join(status) or "nothing"), "")
+
+    picks = session.ask("PICKS")
+    if len([l for l in picks if l.startswith("string ")]) == 6:
+        add("ok", "Pick arms", "All 6 pick angle pairs reported.", "")
+    else:
+        add("warn", "Pick arms", "Expected 6 lines, got %d." % len(picks), "Re-flash if this is an older build.")
+
+    if "Loaded saved tuning" in banner:
+        add("ok", "Tuning", "Saved tuning loaded from EEPROM.", "")
+    elif "No saved tuning" in banner:
+        add("ok", "Tuning", "No saved tuning yet - using the compiled placeholder values.", "")
+    return checks
+
+
 def print_checks(checks, print_fn=print):
     icons = {"ok": "[ OK ]", "warn": "[WARN]", "fail": "[FAIL]"}
     for c in checks:
@@ -360,11 +434,46 @@ def cmd_doctor(args):
 VERBS_WITH_LABEL = {"CHORD", "PRESS", "RELEASE", "CALIB"}
 
 
-def translate(line, buttons):
+CHORD_TEXT = re.compile(r"^[A-Za-z0-9#+\-]{1,12}$")
+
+
+def translate_fretboard(words):
+    """Fretboard console input. The board solves chord names itself, so names
+    pass through with their spelling (Em vs EM matters, and CM7 is not Cm7);
+    only characters a chord name can contain are allowed, so nothing else can
+    be smuggled into the command line."""
+    verb = words[0].upper()
+    if verb in ("SEQ", "SEQUENCE"):
+        bpm = None
+        rest = words[1:]
+        if len(rest) >= 2 and rest[-2].lower() == "bpm" and rest[-1].isdigit():
+            bpm, rest = int(rest[-1]), rest[:-2]
+        if not rest:
+            return [], "usage: seq C G Am F [bpm 60]"
+        for t in rest:
+            if not CHORD_TEXT.match(t):
+                return [], "'%s' is not a chord name" % t[:20]
+        return (["TEMPO %d" % bpm] if bpm else []) + ["SEQUENCE " + " ".join(rest)], None
+    if verb in ("CHORD", "SHOW") and len(words) >= 2:
+        if len(words) != 2 or not CHORD_TEXT.match(words[1]):
+            return [], "'%s' is not a chord name" % " ".join(words[1:])[:20]
+        return ["%s %s" % (verb, words[1])], None
+    if verb == "RELEASE" and len(words) == 2 and words[1].upper() == "ALL":
+        return ["RELEASE ALL"], None
+    if verb == "PROG":
+        for t in words[1:]:
+            if not CHORD_TEXT.match(t):
+                return [], "'%s' is not a chord name" % t[:20]
+    return [" ".join([verb] + words[1:])], None
+
+
+def translate(line, buttons, kind="helper"):
     """Friendly input -> firmware lines. Returns (lines, error)."""
     words = line.strip().split()
     if not words:
         return [], None
+    if kind == "fretboard":
+        return translate_fretboard(words)
     verb = words[0].upper()
     if verb in ("SEQ", "SEQUENCE"):
         bpm = None
@@ -401,8 +510,21 @@ CONSOLE_HELP = """Type a command and press Enter. Examples:
   quit or Ctrl+C      stop everything and leave"""
 
 
-def run_console(session, buttons, input_fn=input, print_fn=print):
-    print_fn(CONSOLE_HELP)
+FRET_CONSOLE_HELP = """Type a command and press Enter. Examples:
+  chord Em            solve the fingering, press the solenoids, strum
+  show Bm             print the fingering only (moves nothing)
+  seq C G Am F bpm 60 play a progression
+  raw x 3 2 0 1 0     press an explicit fingering (frets 0-5, x = muted)
+  press 6 1 / release 6 1 / release all    one solenoid: string 6 = low E, fret 1-5
+  stop                release everything now
+  picks / pick 6 A 70 / pluck 6     pick-arm tuning     (see docs/TUNING_GUIDE.md)
+  kick 80 / hold 30 / tempo 50 / save    tuning
+  status / version / frets / help     (anything else goes to the firmware as typed)
+  quit or Ctrl+C      stop everything and leave"""
+
+
+def run_console(session, buttons, input_fn=input, print_fn=print, kind="helper"):
+    print_fn(FRET_CONSOLE_HELP if kind == "fretboard" else CONSOLE_HELP)
     while True:
         try:
             line = input_fn("agap> ")
@@ -412,9 +534,9 @@ def run_console(session, buttons, input_fn=input, print_fn=print):
         if line.strip().lower() in ("quit", "exit", "q"):
             return
         if line.strip().lower() == "?":
-            print_fn(CONSOLE_HELP)
+            print_fn(FRET_CONSOLE_HELP if kind == "fretboard" else CONSOLE_HELP)
             continue
-        lines, err = translate(line, buttons)
+        lines, err = translate(line, buttons, kind)
         if err:
             print_fn("  ! " + err)
             continue
@@ -428,13 +550,20 @@ def cmd_console(args):
     port = choose_port(args.port)
     if not port:
         return 1
+    seen = []
+
+    def echo(line):
+        seen.append(line)
+        print("\r< " + line + "\nagap> ", end="", flush=True)
+
     try:
-        session = open_session(port, "console", echo=lambda s: print("\r< " + s + "\nagap> ", end="", flush=True))
+        session = open_session(port, "console", echo=echo)
     except ConnectionError as e:
         print(e)
         return 1
     try:
-        run_console(session, buttons)
+        kind = firmware_kind(seen) or "helper"
+        run_console(session, buttons, kind=kind)
     finally:
         print("Stopping and closing...")
         session.stop_and_close()
@@ -460,6 +589,13 @@ def channel_hint(label, buttons):
             "If the board answered 'PRESSED' the firmware side worked." % pin)
 
 
+def fret_channel_hint(string_number, fret):
+    pin = fret_channel_pin(fret_channel(string_number, fret))
+    return ("No click or movement: check the 12 V supply is on, the driver for string %d fret %d is wired to %s, "
+            "the flyback diode is the right way round, and all grounds are joined. "
+            "If the board answered 'PRESSED' the firmware side worked." % (string_number, fret, pin))
+
+
 def pick_hint(n):
     return ("The arm did not move: check the servo's separate 5-6 V supply, that grounds are joined, "
             "and the signal wire on %s. If it moved but hit something, set a safer angle with "
@@ -473,6 +609,43 @@ def yes_no(question, input_fn):
             return True
         if a in ("n", "no"):
             return False
+
+
+def run_fret_channels(session, boot_lines, input_fn, print_fn, record, results_path):
+    """Step 3 for the 30-solenoid fretboard: one coil at a time, never two."""
+    print_fn("\nStep 3/3: solenoids. Start with just one: string 6 (low E), fret 1.")
+    order = [(string, fret) for fret in range(1, 6) for string in range(6, 0, -1)]  # plate by plate
+    todo = [order[0]]
+    done_first = False
+    while todo:
+        string, fret = todo.pop(0)
+        item = "string %d fret %d" % (string, fret)
+        print_fn("\nChannel %s (%s): pressing for about a second."
+                 % (item, fret_channel_pin(fret_channel(string, fret))))
+        session.ask("PRESS %d %d" % (string, fret))
+        ok = yes_no("Did the solenoid for %s click / extend?" % item, input_fn)
+        session.ask("RELEASE %d %d" % (string, fret))
+        record("channel", item, "pass" if ok else "fail")
+        if not ok:
+            print_fn("  -> " + fret_channel_hint(string, fret))
+            session.send("STOP")
+            return False
+        if not done_first:
+            done_first = True
+            if yes_no("Run a 3-press endurance test on %s (watch for heat)?" % item, input_fn):
+                session.send("CALIB %d %d 1000 3 800" % (string, fret))
+                input_fn("Press Enter when it has finished (or Ctrl+C to stop): ")
+                hot = yes_no("Is the coil/driver too hot to keep a finger on?", input_fn)
+                record("calib", item, "fail" if hot else "pass", "hot" if hot else "")
+                if hot:
+                    session.send("STOP")
+                    print_fn("  -> Lower HOLD or KICK (docs/TUNING_GUIDE.md) before more testing.")
+                    return False
+            if yes_no("Test the other %d solenoids one by one, plate by plate?" % (len(order) - 1), input_fn):
+                todo = order[1:]
+    print_fn("\nBring-up finished. Results saved%s." % (" to %s" % results_path if results_path else ""))
+    print_fn("Next: docs/TUNING_GUIDE.md. Remember `save` stores tuned values.")
+    return True
 
 
 def run_bringup(session, buttons, boot_lines, input_fn=input, print_fn=print, results_path=None):
@@ -511,6 +684,9 @@ def run_bringup(session, buttons, boot_lines, input_fn=input, print_fn=print, re
                     return False
     else:
         record("pick", "all", "skipped")
+
+    if firmware_kind(boot_lines) == "fretboard":
+        return run_fret_channels(session, boot_lines, input_fn, print_fn, record, results_path)
 
     print_fn("\nStep 3/3: solenoid channels. Start with just the first one.")
     first = buttons[0]["label"]
@@ -580,12 +756,13 @@ def find_arduino_cli():
     return None
 
 
-def flash_commands(cli, port):
+def flash_commands(cli, port, sketch="fretboard"):
+    path = str(SKETCHES[sketch])
     return [
         [cli, "core", "install", "arduino:avr"],
         [cli, "lib", "install", "Servo"],
-        [cli, "compile", "--fqbn", FQBN, str(SKETCH)],
-        [cli, "upload", "-p", port, "--fqbn", FQBN, str(SKETCH)],
+        [cli, "compile", "--fqbn", FQBN, path],
+        [cli, "upload", "-p", port, "--fqbn", FQBN, path],
     ]
 
 
@@ -600,7 +777,10 @@ def cmd_flash(args):
     if not port:
         return 1
     print("Close the Serial Monitor and any other program using %s first." % port)
-    for cmd in flash_commands(cli, port):
+    sketch = getattr(args, "sketch", "fretboard")
+    print("Flashing the %s firmware." % ("final fretboard (30 solenoids)" if sketch == "fretboard"
+                                         else "earlier chord-helper"))
+    for cmd in flash_commands(cli, port, sketch):
         print("\n$ " + " ".join(cmd))
         if subprocess.call(cmd) != 0:
             print("\nThat step failed. The message above says why; a common cause is the wrong port "
@@ -638,11 +818,14 @@ def selftest_plan():
         ("G-code inspector tests", ROOT / "tools" / "tests", "test_hvs_inspect"),
         ("LH base fit checker tests", ROOT / "tools" / "tests", "test_lh_fit"),
         ("Central deck drawing tests", ROOT / "tools" / "tests", "test_deck_drawing"),
+        ("STL inspector tests", ROOT / "tools" / "tests", "test_stl_inspect"),
     ]
     plan = [(n, cwd, mod, None) for n, cwd, mod in py]
     plan += [
         ("Firmware logic tests (C++)", ROOT / "AGAP_HelperButton" / "tests", None, "test_agap_logic.cpp"),
         ("Control tool tests (C++)", ROOT / "tools" / "tests", None, "test_agap_control_logic.cpp"),
+        ("Fretboard chord search vs ChordAI (C++)", ROOT / "AGAP_Fretboard" / "tests", None, "test_agap_chords.cpp"),
+        ("Fretboard channel mapping (C++)", ROOT / "AGAP_Fretboard" / "tests", None, "test_agap_fret.cpp"),
     ]
     return plan
 
@@ -668,7 +851,16 @@ def run_suite(name, cwd, module, cpp_src, gpp):
             c = run(cpp_compile_command(gpp, cpp_src, exe))
             if c.returncode != 0:
                 return False, "did not compile", c.stdout
-            r = run([str(exe)])
+            extra = []
+            if cpp_src == "test_agap_chords.cpp":
+                # The chord search is checked against the Python one: write its answers first.
+                expected = Path(tmp) / "expected_chords.txt"
+                d = run([sys.executable, "dump_python_chords.py"])
+                if d.returncode != 0:
+                    return False, "could not run the Python solver", d.stdout
+                expected.write_text(d.stdout, encoding="utf-8")
+                extra = [str(expected)]
+            r = run([str(exe)] + extra)
             out = r.stdout
     lines = out.strip().splitlines() or [""]
     return r.returncode == 0, lines[-1], out
@@ -718,8 +910,11 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", help="serial port, e.g. COM5 (auto-detected if omitted)")
     sub = ap.add_subparsers(dest="cmd")
-    for name in ("doctor", "bringup", "console", "flash", "selftest", "ports"):
+    for name in ("doctor", "bringup", "console", "selftest", "ports"):
         sub.add_parser(name)
+    fl = sub.add_parser("flash")
+    fl.add_argument("--sketch", choices=sorted(SKETCHES), default="fretboard",
+                    help="fretboard = final 30-solenoid design (default); helper = earlier chord-helper build")
     b = sub.add_parser("bridge")
     b.add_argument("--simulate", action="store_true", help="no board: try the page against a stand-in")
     b.add_argument("--allow-unconfirmed", action="store_true")

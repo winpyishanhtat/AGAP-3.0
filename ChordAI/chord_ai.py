@@ -71,7 +71,36 @@ QUALITIES = [
     Quality(("m7b5", "m7-5"), (0, 3, 6, 10), (40, 40, 20, 20)),
 ]
 
-_BY_NAME = {alias.lower(): q for q in QUALITIES for alias in q.names}
+_EXACT = {alias: q for q in QUALITIES for alias in q.names}
+
+
+def _unique_lowercase():
+    """Lowercased alias -> quality, leaving out any lowercase form that two
+    different qualities share (maj7's "M7" and m7's "m7" both lower to "m7")."""
+    seen = {}
+    for q in QUALITIES:
+        for alias in q.names:
+            seen.setdefault(alias.lower(), set()).add(q.names[0])
+    return {lo: _EXACT[next(a for a in _EXACT if a.lower() == lo)]
+            for lo, owners in seen.items() if len(owners) == 1}
+
+
+_LOWER = _unique_lowercase()
+
+
+def lookup_quality(text):
+    """Quality for the part of a chord name after the root, or None.
+
+    Exact spelling first, because capital M and lowercase m differ (CM7 is a
+    major seventh, Cm7 a minor seventh). Only then a case-insensitive match for
+    spelled-out words (Maj7, DIM, Sus4), and never for a bare capital M or
+    M plus a number (CM, CM9): those mean major in common notation, so guessing
+    minor would be wrong, and it is better to reject than to guess."""
+    if text in _EXACT:
+        return _EXACT[text]
+    if len(text) < 3 or (text[0] == "M" and text[1].isdigit()):
+        return None
+    return _LOWER.get(text.lower())
 
 # Cost weights for the voicing search itself (mirrors the firmware's
 # COST_* constants in AGAP_Mega.ino).
@@ -116,7 +145,7 @@ def parse_chord(text: str) -> tuple[int, Quality]:
     elif rest[:1] == "b":
         pc -= 1
         rest = rest[1:]
-    quality = _BY_NAME.get(rest.lower())
+    quality = lookup_quality(rest)
     if quality is None:
         known = ", ".join(sorted({q.names[0] or "(major)" for q in QUALITIES}))
         raise ValueError(f"'{text}': unknown chord quality '{rest}'. Known: {known}")

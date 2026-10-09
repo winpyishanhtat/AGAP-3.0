@@ -9,6 +9,7 @@
 #include "../agap_logic.h"
 
 #include <cstdio>
+#include <initializer_list>
 
 using namespace agap;
 
@@ -167,6 +168,96 @@ void test_out_of_range_saved_values_are_clamped_on_load() {
   CHECK(decodeTuning(buf, got));
   CHECK_EQ(got.kickMs, KICK_MS_MAX);
   CHECK_EQ(got.pickA[2], PICK_ANGLE_MIN);
+}
+
+// --------------------------- 30-channel masks, active cap, strum mask ---------------------------
+
+void test_mask32_covers_30_channels_across_four_ports() {
+  ChannelDriver<30> d(60, 8000);
+  for (uint8_t i = 0; i < 30; i++) d.press(i, 0, 0);
+  d.update(0);  // all KICK
+  Mask32 m = d.computeMask32();
+  CHECK_EQ(m.on, 0x3FFFFFFFu);
+  CHECK_EQ(m.kick, 0x3FFFFFFFu);
+  d.update(60);  // all HOLD
+  m = d.computeMask32();
+  CHECK_EQ(m.on, 0x3FFFFFFFu);
+  CHECK_EQ(m.kick, 0u);
+}
+
+void test_mask32_single_channels_land_on_the_right_bit() {
+  for (uint8_t ch : std::initializer_list<uint8_t>{0, 7, 8, 15, 16, 23, 24, 29}) {
+    ChannelDriver<30> d(60, 8000);
+    d.press(ch, 0, 0);
+    d.update(0);
+    Mask32 m = d.computeMask32();
+    CHECK_EQ(m.on, 1u << ch);
+    CHECK_EQ(m.kick, 1u << ch);
+  }
+}
+
+void test_masks_and_mask32_agree_for_the_10_channel_layout() {
+  ChannelDriver<10> d(60, 8000);
+  for (uint8_t i = 0; i < 10; i += 2) d.press(i, 0, 0);
+  d.update(0);
+  Masks m = d.computeMasks();
+  Mask32 w = d.computeMask32();
+  CHECK_EQ((uint32_t)m.a | ((uint32_t)m.c << 8), w.on);
+  CHECK_EQ((uint32_t)m.ka | ((uint32_t)m.kc << 8), w.kick);
+}
+
+void test_activeCount_counts_pending_kick_and_hold() {
+  ChannelDriver<30> d(60, 8000);
+  CHECK_EQ(d.activeCount(), 0);
+  d.press(3, 0, 0);
+  d.press(9, 100, 0);  // pending, not yet kicking
+  CHECK_EQ(d.activeCount(), 2);
+  d.update(0);
+  d.update(60);
+  d.release(3);
+  CHECK_EQ(d.activeCount(), 1);
+}
+
+void test_tryPress_refuses_beyond_the_cap_but_allows_refresh() {
+  ChannelDriver<30> d(60, 8000);
+  for (uint8_t i = 0; i < 6; i++) CHECK(d.tryPress(i, 0, 0, 6));
+  CHECK(!d.tryPress(6, 0, 0, 6));            // a 7th coil is refused
+  CHECK(d.stateOf(6) == ChanState::OFF);      // and nothing was started
+  CHECK(d.tryPress(2, 0, 100, 6));            // re-pressing one already on is fine
+  d.release(0);
+  CHECK(d.tryPress(6, 0, 100, 6));            // room again after a release
+}
+
+void test_strum_mask_skips_unplayed_strings_without_waiting() {
+  Strummer s;
+  s.start(true, 0, 18, 0b101011);  // strings 0,1,3,5 sound; 2 and 4 are muted
+  CHECK_EQ(s.update(0), 0);
+  CHECK_EQ(s.update(18), 1);
+  CHECK_EQ(s.update(36), 3);   // string 2 skipped: no extra gap spent on it
+  CHECK_EQ(s.update(54), 5);
+  CHECK(s.active());
+  CHECK_EQ(s.update(72), -1);
+  CHECK(!s.active());
+}
+
+void test_strum_mask_up_direction_and_empty_mask() {
+  Strummer s;
+  s.start(false, 0, 10, 0b010010);  // strings 1 and 4
+  CHECK_EQ(s.update(0), 4);
+  CHECK_EQ(s.update(10), 1);
+  CHECK_EQ(s.update(20), -1);
+  Strummer e;
+  e.start(true, 0, 10, 0);
+  CHECK_EQ(e.update(0), -1);
+  CHECK(!e.active());
+}
+
+void test_strum_default_mask_is_all_six() {
+  Strummer s;
+  s.start(true, 0, 5);
+  int plucks = 0;
+  for (uint32_t t = 0; t < 100; t += 5) if (s.update(t) >= 0) plucks++;
+  CHECK_EQ(plucks, 6);
 }
 
 // --------------------------- ChannelDriver ---------------------------
@@ -395,6 +486,15 @@ int main() {
   RUN(test_tuning_decode_leaves_output_untouched_on_failure);
   RUN(test_sanitize_clamps_everything);
   RUN(test_out_of_range_saved_values_are_clamped_on_load);
+
+  RUN(test_mask32_covers_30_channels_across_four_ports);
+  RUN(test_mask32_single_channels_land_on_the_right_bit);
+  RUN(test_masks_and_mask32_agree_for_the_10_channel_layout);
+  RUN(test_activeCount_counts_pending_kick_and_hold);
+  RUN(test_tryPress_refuses_beyond_the_cap_but_allows_refresh);
+  RUN(test_strum_mask_skips_unplayed_strings_without_waiting);
+  RUN(test_strum_mask_up_direction_and_empty_mask);
+  RUN(test_strum_default_mask_is_all_six);
 
   RUN(test_channel_starts_off);
   RUN(test_channel_press_then_update_goes_pending_then_kick);

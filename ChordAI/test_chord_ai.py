@@ -134,5 +134,39 @@ class TestRecognize(unittest.TestCase):
             recognize((MUTED,) * 6)
 
 
+class TestQualityNames(unittest.TestCase):
+    """Capital M is major and lowercase m is minor. A case-insensitive lookup
+    used to merge them: CM7 became Cm7 and CM became C minor."""
+
+    def name(self, text):
+        from chord_ai import NOTE_NAMES
+        root, q = parse_chord(text)
+        return NOTE_NAMES[root] + q.names[0]
+
+    def test_capital_M7_is_major_seventh(self):
+        self.assertEqual(self.name("CM7"), "Cmaj7")
+        self.assertEqual(self.name("Cmaj7"), "Cmaj7")
+
+    def test_lowercase_m7_is_minor_seventh(self):
+        self.assertEqual(self.name("Cm7"), "Cm7")
+
+    def test_bare_capital_M_is_rejected_not_guessed(self):
+        for text in ("CM", "CM9", "CM6", "CM7b5"):
+            with self.assertRaises(ValueError, msg=text):
+                parse_chord(text)
+
+    def test_capitalised_words_still_work(self):
+        self.assertEqual(self.name("CMaj7"), "Cmaj7")
+        self.assertEqual(self.name("CMAJ7"), "Cmaj7")
+        self.assertEqual(self.name("CMin"), "Cm")
+        self.assertEqual(self.name("CDim"), "Cdim")
+        self.assertEqual(self.name("CSus4"), "Csus4")
+
+    def test_plain_major_and_minor(self):
+        self.assertEqual(self.name("C"), "C")
+        self.assertEqual(self.name("Cm"), "Cm")
+        self.assertEqual(self.name("Cmaj"), "C")
+
+
 if __name__ == "__main__":
     unittest.main()

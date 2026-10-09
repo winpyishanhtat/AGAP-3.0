@@ -35,6 +35,10 @@ class FakeBoard:
         self.broken = False
         if mode == "wrong":
             self._push("Hello from some other sketch")
+        elif mode.startswith("fret") and boot:
+            self._push("AGAP (fretboard) ready - type HELP")
+            self._push("AGAP-fretboard fw 0.1")
+            self._push("No saved tuning - using compiled defaults.")
         elif mode != "silent" and boot:
             self._push("AGAP (helper-button) ready - type HELP")
             self._push("AGAP-helper-button fw 0.4")
@@ -53,6 +57,16 @@ class FakeBoard:
         if self.mode in ("silent", "wrong"):
             return
         word = line.split(" ", 1)[0]
+        if self.mode.startswith("fret") and word in ("VERSION", "FRETS", "SHOW"):
+            if word == "VERSION":
+                self._push("AGAP-fretboard fw 0.1 built test")
+            elif word == "FRETS":
+                self._push("6 strings x 5 frets = 20 channels, at most 6 coils at once" if self.mode == "fret20"
+                           else "6 strings x 5 frets = 30 channels, at most 6 coils at once")
+            else:
+                self._push("Bm -> x 0 0 x 0 2  (cost 99)" if self.mode == "fretbadsolver"
+                           else "Bm -> x 2 0 x 0 2  (cost 18)")
+            return
         if word == "VERSION":
             self._push("ERR unknown command, type HELP" if self.mode == "old" else "AGAP-helper-button fw 0.4 built test")
         elif word == "LABELS":
@@ -337,6 +351,177 @@ class TestSession(unittest.TestCase):
         time.sleep(0.05)
         s.stop_and_close()
         self.assertIn("STOP", board.written)
+
+
+class TestFretboardFirmware(unittest.TestCase):
+    def doctor(self, mode):
+        board = FakeBoard(mode)
+        s = session_for(board)
+        try:
+            boot = s.collect(first_wait=0.2, quiet=0.05)
+            return agap.diagnose(boot, s, buttons()), board
+        finally:
+            s._done = True
+
+    def test_firmware_kind_detection(self):
+        self.assertEqual(agap.firmware_kind(["AGAP (fretboard) ready - type HELP"]), "fretboard")
+        self.assertEqual(agap.firmware_kind(["AGAP-fretboard fw 0.1 built x"]), "fretboard")
+        self.assertEqual(agap.firmware_kind(["AGAP-helper-button fw 0.4"]), "helper")
+        self.assertIsNone(agap.firmware_kind(["Hello from some other sketch"]))
+        self.assertIsNone(agap.firmware_kind([]))
+
+    def test_healthy_fretboard_passes_and_is_read_only(self):
+        checks, board = self.doctor("fretboard")
+        self.assertEqual([c for c in checks if c.status == "fail"], [])
+        titles = {c.title: c.status for c in checks}
+        self.assertEqual(titles["Channels"], "ok")
+        self.assertEqual(titles["On-board chord search"], "ok")
+        # Never energise anything, and never ask for the helper's button labels.
+        sent = {w.split()[0] for w in board.written}
+        self.assertTrue(sent <= {"VERSION", "FRETS", "SHOW", "STATUS", "PICKS"}, sent)
+        self.assertNotIn("LABELS", sent)
+
+    def test_wrong_channel_count_is_flagged(self):
+        checks, _ = self.doctor("fret20")
+        self.assertEqual({c.title: c.status for c in checks}["Channels"], "fail")
+
+    def test_on_board_solver_disagreeing_with_the_known_answer_is_flagged(self):
+        checks, _ = self.doctor("fretbadsolver")
+        self.assertEqual({c.title: c.status for c in checks}["On-board chord search"], "fail")
+
+    def test_fretboard_does_not_complain_about_unconfirmed_helper_buttons(self):
+        checks, _ = self.doctor("fretboard")
+        self.assertNotIn("Chord chart", {c.title for c in checks})
+
+
+class TestFretboardConsole(unittest.TestCase):
+    def t(self, line):
+        return agap.translate(line, buttons(), "fretboard")
+
+    def test_chord_names_pass_through_with_their_spelling(self):
+        self.assertEqual(self.t("chord Em"), (["CHORD Em"], None))
+        self.assertEqual(self.t("chord F#m7"), (["CHORD F#m7"], None))
+        self.assertEqual(self.t("show Bm"), (["SHOW Bm"], None))
+
+    def test_sequence_with_tempo(self):
+        self.assertEqual(self.t("seq C G Am F bpm 60"), (["TEMPO 60", "SEQUENCE C G Am F"], None))
+        self.assertIn("usage", self.t("seq")[1])
+
+    def test_unsafe_chord_text_is_refused_before_sending(self):
+        for bad in ("chord Em;STOP", "chord " + "C" * 40, "seq C G;HOLD"):
+            lines, err = self.t(bad)
+            self.assertEqual(lines, [], bad)
+            self.assertTrue(err, bad)
+
+    def test_other_commands_pass_through(self):
+        self.assertEqual(self.t("raw x 3 2 0 1 0"), (["RAW x 3 2 0 1 0"], None))
+        self.assertEqual(self.t("press 6 1"), (["PRESS 6 1"], None))
+        self.assertEqual(self.t("release all"), (["RELEASE ALL"], None))
+        self.assertEqual(self.t("stop"), (["STOP"], None))
+
+    def test_helper_mode_still_resolves_labels(self):
+        self.assertEqual(agap.translate("chord em", buttons()), (["CHORD EM"], None))
+
+
+class TestFretboardBringup(unittest.TestCase):
+    def go(self, answers, mode="fretboard"):
+        board = FakeBoard(mode)
+        s = session_for(board)
+        boot = s.collect(first_wait=0.2, quiet=0.05)
+        out = []
+        tmp = Path(tempfile.mkdtemp()) / "r.csv"
+        ok = agap.run_bringup(s, buttons(), boot, Script(*answers), out.append, tmp)
+        s._done = True
+        return ok, board, out, tmp
+
+    def test_happy_path_tests_one_solenoid_only(self):
+        # YES, skip picks, channel clicked, no endurance test, no more channels
+        ok, board, _, csv_path = self.go(["YES", "n", "y", "n", "n"])
+        self.assertTrue(ok)
+        self.assertEqual([w for w in board.written if w.startswith("PRESS")], ["PRESS 6 1"])
+        self.assertEqual([w for w in board.written if w.startswith("RELEASE")], ["RELEASE 6 1"])
+        self.assertIn("string 6 fret 1", read(csv_path))
+
+    def test_failed_channel_is_released_stopped_and_points_at_its_pin(self):
+        ok, board, out, _ = self.go(["YES", "n", "n"])
+        self.assertFalse(ok)
+        w = board.written
+        self.assertLess(w.index("PRESS 6 1"), w.index("RELEASE 6 1"))
+        self.assertIn("STOP", w)
+        self.assertTrue(any("D22" in line for line in out))  # channel 0 is D22
+
+    def test_all_thirty_channels_when_asked(self):
+        ok, board, _, _ = self.go(["YES", "n", "y", "n", "y"] + ["y"] * 29)
+        self.assertTrue(ok)
+        presses = [w for w in board.written if w.startswith("PRESS")]
+        self.assertEqual(len(presses), 30)
+        self.assertEqual(len(set(presses)), 30)
+        self.assertEqual(presses[0], "PRESS 6 1")    # plate 1 first, low E first
+        self.assertEqual(presses[6], "PRESS 6 2")    # then plate 2
+        self.assertEqual(presses[-1], "PRESS 1 5")   # high e on plate 5 last
+        self.assertEqual(len([w for w in board.written if w.startswith("RELEASE")]), 30)
+
+    def test_never_more_than_one_coil_is_on_at_a_time_during_bringup(self):
+        ok, board, _, _ = self.go(["YES", "n", "y", "n", "y"] + ["y"] * 29)
+        on = 0
+        for w in board.written:
+            if w.startswith("PRESS"):
+                on += 1
+            elif w.startswith("RELEASE"):
+                on -= 1
+            self.assertLessEqual(on, 1)
+
+    def test_pick_failure_points_at_the_servo_pin(self):
+        ok, board, out, _ = self.go(["YES", "y", "n", "n"])
+        self.assertFalse(ok)
+        self.assertTrue(any("D2" in line for line in out))
+
+
+class TestFretboardTables(unittest.TestCase):
+    def test_channel_numbering_matches_the_firmware_header(self):
+        self.assertEqual(agap.fret_channel(6, 1), 0)    # low E, fret 1
+        self.assertEqual(agap.fret_channel(1, 1), 5)    # high e, fret 1
+        self.assertEqual(agap.fret_channel(6, 2), 6)
+        self.assertEqual(agap.fret_channel(1, 5), 29)
+
+    def test_pins_are_all_distinct_and_match_the_header_table(self):
+        pins = [agap.fret_channel_pin(c) for c in range(30)]
+        self.assertEqual(len(set(pins)), 30)
+        header = (ROOT / "AGAP_Fretboard" / "agap_fret.h").read_text(encoding="utf-8")
+        rows = re.findall(r"channels\s+(\d+)-\s*(\d+)\s+PORT[ACLK]\s+bit \d-\d\s+((?:[DA]\d+\s*)+)", header)
+        self.assertEqual(len(rows), 4)
+        from_header = []
+        for lo, hi, names in rows:
+            listed = names.split()
+            self.assertEqual(len(listed), int(hi) - int(lo) + 1)
+            from_header += listed
+        self.assertEqual(from_header, pins)
+
+    def test_both_copies_of_the_shared_logic_header_are_identical(self):
+        a = (ROOT / "AGAP_HelperButton" / "agap_logic.h").read_bytes()
+        b = (ROOT / "AGAP_Fretboard" / "agap_logic.h").read_bytes()
+        self.assertEqual(a, b, "re-copy AGAP_HelperButton/agap_logic.h into AGAP_Fretboard/")
+
+    def test_fretboard_firmware_name_matches_the_sketch(self):
+        src = (ROOT / "AGAP_Fretboard" / "AGAP_Fretboard.ino").read_text(encoding="utf-8")
+        self.assertIn('#define FW_NAME "%s"' % agap.FRET_FW_NAME, src)
+
+    def test_servo_pins_match_the_fretboard_sketch(self):
+        src = (ROOT / "AGAP_Fretboard" / "AGAP_Fretboard.ino").read_text(encoding="utf-8")
+        pins = re.search(r"SERVO_PIN\[6\]\s*=\s*\{([^}]*)\}", src).group(1)
+        self.assertEqual(["D" + p.strip() for p in pins.split(",")], [agap.servo_pin(n) for n in range(6, 0, -1)])
+
+    def test_flash_defaults_to_the_fretboard_sketch(self):
+        cmds = agap.flash_commands("arduino-cli", "COM5")
+        self.assertTrue(cmds[2][-1].endswith("AGAP_Fretboard"))
+        helper = agap.flash_commands("arduino-cli", "COM5", "helper")
+        self.assertTrue(helper[2][-1].endswith("AGAP_HelperButton"))
+        self.assertEqual([c[1] for c in cmds], ["core", "lib", "compile", "upload"])
+
+    def test_selftest_includes_the_fretboard_suites(self):
+        names = [n for n, _, _, _ in agap.selftest_plan()]
+        self.assertTrue(any("Fretboard" in n for n in names))
+        self.assertTrue(any("STL" in n for n in names))
 
 
 class TestFlashAndRepo(unittest.TestCase):

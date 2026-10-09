@@ -29,8 +29,25 @@
     Q(["7sus4"], [0, 5, 7, 10], [40, 40, 8, 20]),
     Q(["m7b5", "m7-5"], [0, 3, 6, 10], [40, 40, 20, 20])
   ];
-  var BY_NAME = {};
-  QUALITIES.forEach(function (q) { q.names.forEach(function (a) { BY_NAME[a.toLowerCase()] = q; }); });
+  var EXACT = {}, LOWER = {}, lowerOwners = {};
+  QUALITIES.forEach(function (q) {
+    q.names.forEach(function (a) {
+      EXACT[a] = q;
+      var lo = a.toLowerCase();
+      (lowerOwners[lo] = lowerOwners[lo] || {})[q.names[0]] = true;
+    });
+  });
+  Object.keys(lowerOwners).forEach(function (lo) {
+    if (Object.keys(lowerOwners[lo]).length === 1) {
+      Object.keys(EXACT).forEach(function (a) { if (a.toLowerCase() === lo) LOWER[lo] = EXACT[a]; });
+    }
+  });
+
+  function lookupQuality(text) {
+    if (Object.prototype.hasOwnProperty.call(EXACT, text)) return EXACT[text];
+    if (text.length < 3 || (text[0] === "M" && /[0-9]/.test(text[1]))) return null;
+    return Object.prototype.hasOwnProperty.call(LOWER, text.toLowerCase()) ? LOWER[text.toLowerCase()] : null;
+  }
 
   var COST_MUTE = 6, COST_INNER_MUTE = 4, COST_FRETTED = 1, COST_BASS_NOT_ROOT = 15, COST_THIN = 60;
 
@@ -44,7 +61,7 @@
     var pc = LETTER_PC[letter], rest = text.slice(1);
     if (rest[0] === "#") { pc += 1; rest = rest.slice(1); }
     else if (rest[0] === "b") { pc -= 1; rest = rest.slice(1); }
-    var q = BY_NAME[rest.toLowerCase()];
+    var q = lookupQuality(rest);
     if (!q) throw new Error("'" + text + "': unknown chord quality '" + rest + "'");
     return { root: mod12(pc), quality: q };
   }

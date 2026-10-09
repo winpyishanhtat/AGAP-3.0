@@ -23,8 +23,18 @@ jobs:
         with:
           python-version: "3.11"
       - name: G-code inspector and LH fit checker tests
-        run: python -m unittest test_hvs_inspect test_lh_fit test_deck_drawing -v
+        run: python -m unittest test_hvs_inspect test_lh_fit test_deck_drawing test_stl_inspect -v
         working-directory: tools/tests
+
+  fretboard-tests:
+    name: Fretboard logic + chord search vs ChordAI (g++, Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: bash AGAP_Fretboard/tests/run_tests.sh
 
   launcher-tests:
     name: Launcher tests (Python)
@@ -88,6 +98,8 @@ jobs:
           arduino-cli lib install Servo
       - name: Compile AGAP_HelperButton
         run: arduino-cli compile --fqbn arduino:avr:mega AGAP_HelperButton
+      - name: Compile AGAP_Fretboard
+        run: arduino-cli compile --fqbn arduino:avr:mega AGAP_Fretboard
       - name: Compile AGAP_Mega
         run: arduino-cli compile --fqbn arduino:avr:mega AGAP_Mega
 

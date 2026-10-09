@@ -16,6 +16,11 @@ for (const e of expected.recognize) {
   check(JSON.stringify(got) === JSON.stringify(e.top),
         `recognize ${e.frets}: js ${JSON.stringify(got)} vs py ${JSON.stringify(e.top)}`);
 }
+for (const e of expected.parse) {
+  let got = null;
+  try { const p = ChordAI.parseChord(e.text); got = ChordAI.NOTE_NAMES[p.root] + p.quality.names[0]; } catch (err) { got = null; }
+  check(got === e.name, `parse "${e.text}": js ${got} vs py ${e.name}`);
+}
 check(ChordAI.isBarre([1,3,3,2,1,1]) === true, "isBarre full F");
 check(ChordAI.isBarre([-1,3,2,0,1,0]) === false, "isBarre open C");
 console.log(`${total - failures}/${total} parity checks passed`);
