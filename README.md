@@ -1,4 +1,45 @@
-# AGAP — Arduino Guitar Auto Player (Arduino Mega 2560)
+# AGAP | Arduino Guitar Auto Player
+
+AGAP explores a physical question: once software has found a playable guitar chord, can a mechanism fret it cleanly and pick the right strings on time?
+
+## Current design and earlier prototypes
+
+The current fretboard firmware targets an Arduino Mega 2560. Five fret positions across six strings give the design 30 solenoid positions. The controller selects a fingering, limits simultaneous coil activation and drives six servo picks. The sketch uses the Arduino Servo library on pins D2–D7. The repository also preserves an 18-position design and a ten-button chord-helper prototype.
+
+The earlier [project-owner notes](README_AGAP.md) document helper measurements and an adjustable single-button fixture. The [current firmware](AGAP_Fretboard/AGAP_Fretboard.ino) and [bench log](docs/bench_test_log.csv) distinguish software progress from physical validation. The bench log at this revision has a header awaiting measurements.
+
+## Try the chord logic without hardware
+
+With Python 3, from the repository root:
+
+~~~powershell
+python ChordAI/test_chord_ai.py
+~~~
+
+The tests exercise chord parsing, fingering search and recognition. For the firmware simulator and phone interface, install the listed Python dependency and make a C++ compiler available as g++:
+
+~~~powershell
+python -m pip install -r requirements.txt
+python agap.py demo
+~~~
+
+Follow the URL printed by the launcher. [Interface examples](bridge/README.md) · [Full test plan](docs/TEST_PLAN.md)
+
+## From chord to string
+
+A host command travels over serial to the board. The firmware resolves the chord into fret positions, sequences coil activation and times the servo picks. STOP releases the actuators. MOSFET stages switch the solenoid supply, flyback diodes protect the switching path and the servos have a separate regulated supply. [System flow](docs/SYSTEM_FLOW.md) · [Hardware specifications](docs/HARDWARE_SPECS.md)
+
+## Physical validation
+
+Fret alignment, coil heating and the delay between pressing and picking can each change the sound even when the software selects the correct chord. The next milestone is a logged single-position bench test covering clean contact, release, temperature and repeatability before a full chord trial. Use the [manual](AGAP_Fretboard/USER_MANUAL.md) and [tuning guide](docs/TUNING_GUIDE.md) for the board-specific sequence.
+
+## Team credits
+
+The team proposed the original guitar automation concept. **Zwe Nyi Nyar (Zwe Zwe)** built most of the hardware and electronics and wrote most of the software, with support from his teammates. [Project-owner notes](README_AGAP.md)
+
+---
+
+## Detailed project reference
 
 A robot that plays a real guitar. **New here? Read [`docs/SYSTEM_FLOW.md`](docs/SYSTEM_FLOW.md)** for a plain-words overview and the system flow.
 
